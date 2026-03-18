@@ -95,10 +95,20 @@ If Figma updates, the patch is removed — just run `desh connect` again.
 
 ```mermaid
 graph LR
-    A[desh CLI] -->|WebSocket CDP| B[Figma Desktop]
-    A -->|REST API| C[Figma API]
-    D[Your Codebase] -->|tokens & components| A
+    A[desh CLI]:::neonPink -->|WebSocket CDP| B[Figma Desktop]:::neonPurple
+    A -->|REST API| C[Figma API]:::neonBlue
+    D[Your Codebase]:::neonGreen -->|tokens & components| A
     B -->|localhost:9222| A
+
+    classDef neonPink fill:#ff2d95,stroke:#ff2d95,color:#fff,stroke-width:2px
+    classDef neonPurple fill:#7b2ff7,stroke:#7b2ff7,color:#fff,stroke-width:2px
+    classDef neonBlue fill:#00d4ff,stroke:#00d4ff,color:#000,stroke-width:2px
+    classDef neonGreen fill:#0fff50,stroke:#0fff50,color:#000,stroke-width:2px
+
+    linkStyle 0 stroke:#ff2d95,stroke-width:2px
+    linkStyle 1 stroke:#00d4ff,stroke-width:2px
+    linkStyle 2 stroke:#0fff50,stroke-width:2px
+    linkStyle 3 stroke:#7b2ff7,stroke-width:2px
 ```
 
 desh patches Figma's `app.asar` to enable Chrome DevTools Protocol on port 9222. Each command:
@@ -282,17 +292,36 @@ desh is designed to be controlled by AI coding agents like **Claude Code**, **Cu
 
 ```mermaid
 graph TD
-    A[User: Create a dashboard] --> B[AI Agent reads desh skill]
-    B --> C{What exists?}
-    C -->|Check library| D[desh lib search]
-    C -->|Check tokens| E[desh var list]
-    C -->|Check codebase| F[desh components list]
-    D --> G[Instance existing components]
-    E --> H[Bind to variables]
-    F --> I[Push missing components]
-    G --> J[Render layout in Figma]
+    A[User: Create a dashboard]:::neonPink --> B[AI Agent reads desh skill]:::neonPurple
+    B --> C{What exists?}:::neonYellow
+    C -->|Check library| D[desh lib search]:::neonBlue
+    C -->|Check tokens| E[desh var list]:::neonBlue
+    C -->|Check codebase| F[desh components list]:::neonBlue
+    D --> G[Instance existing components]:::neonGreen
+    E --> H[Bind to variables]:::neonGreen
+    F --> I[Push missing components]:::neonGreen
+    G --> J[Render layout in Figma]:::neonCyan
     H --> J
     I --> J
+
+    classDef neonPink fill:#ff2d95,stroke:#ff2d95,color:#fff,stroke-width:2px
+    classDef neonPurple fill:#7b2ff7,stroke:#7b2ff7,color:#fff,stroke-width:2px
+    classDef neonBlue fill:#1a1a2e,stroke:#00d4ff,color:#00d4ff,stroke-width:2px
+    classDef neonGreen fill:#1a1a2e,stroke:#0fff50,color:#0fff50,stroke-width:2px
+    classDef neonYellow fill:#1a1a2e,stroke:#ffe600,color:#ffe600,stroke-width:2px
+    classDef neonCyan fill:#00d4ff,stroke:#00d4ff,color:#000,stroke-width:3px
+
+    linkStyle 0 stroke:#ff2d95,stroke-width:2px
+    linkStyle 1 stroke:#7b2ff7,stroke-width:2px
+    linkStyle 2 stroke:#00d4ff,stroke-width:2px
+    linkStyle 3 stroke:#00d4ff,stroke-width:2px
+    linkStyle 4 stroke:#00d4ff,stroke-width:2px
+    linkStyle 5 stroke:#0fff50,stroke-width:2px
+    linkStyle 6 stroke:#0fff50,stroke-width:2px
+    linkStyle 7 stroke:#0fff50,stroke-width:2px
+    linkStyle 8 stroke:#00d4ff,stroke-width:2px
+    linkStyle 9 stroke:#00d4ff,stroke-width:2px
+    linkStyle 10 stroke:#00d4ff,stroke-width:2px
 ```
 
 The skill teaches a **discovery-first workflow** — explore what exists, bridge the gaps, then create. This prevents the common AI mistake of rebuilding components from scratch when they already exist in your design system.
