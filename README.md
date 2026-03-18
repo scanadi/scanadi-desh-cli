@@ -16,10 +16,10 @@
 
 ## What is desh?
 
-desh connects directly to Figma Desktop via Chrome DevTools Protocol and gives you full read/write access to your design files — from the command line.
+desh connects to Figma Desktop via a lightweight plugin bridge and gives you full read/write access to your design files — from the command line. No binary patching, no special permissions needed.
 
 - **Codebase-Aware** — reads your Tailwind v4 tokens, shadcn components, and icons from source
-- **Pure CLI** — no daemon, no background process. Each command connects, executes, disconnects
+- **Plugin Bridge** — a Figma plugin + local WebSocket server, no patching or elevated permissions
 - **Design Tokens** — syncs `@theme`, `:root`, `.dark` CSS variables to Figma variables with Light/Dark modes
 - **Component Registry** — scans `.tsx` files, pushes components to Figma, instances them in layouts
 - **Library Integration** — search and import components from Figma team libraries via REST API
@@ -60,34 +60,31 @@ bun install && bun run build && bun link
 ## Quick Start
 
 ```bash
-# 1. Connect to Figma Desktop (patches once, verifies connection)
+# 1. Start the bridge server
 desh connect
 
-# 2. Set up your project (optional — scans codebase, generates config)
+# 2. Open Figma → Plugins → desh → Run
+
+# 3. Set up your project (optional — scans codebase, generates config)
 desh init
 
-# 3. Sync tokens + components from code to Figma
+# 4. Sync tokens + components from code to Figma
 desh sync
 
-# 4. Create something
+# 5. Create something
 desh render '<Frame name="Card" w={320} bg="var:card" rounded={12} flex="col" p={24} gap={12}>
   <Text size={18} weight="bold" color="var:foreground" w="fill">Hello desh</Text>
 </Frame>'
 ```
 
-### First-Time Setup (macOS)
+### First-Time Setup
 
-`desh connect` patches Figma to enable the debug port. This requires Full Disk Access:
+1. Run `desh connect` — starts a local bridge server
+2. Open Figma Desktop and open a design file
+3. Go to **Plugins → desh → Run**
+4. Run `desh connect` again to verify
 
-1. **System Settings → Privacy & Security → Full Disk Access**
-2. Add your Terminal app (Terminal, iTerm, Warp, VS Code, etc.)
-3. **Restart Terminal**
-4. Make sure Figma is **fully closed**
-5. Run `desh connect`
-
-This is a one-time setup. After patching, `desh connect` just verifies the connection.
-
-If Figma updates, the patch is removed — just run `desh connect` again.
+The bridge server auto-starts when needed and exits after 5 minutes of inactivity. The desh plugin must be running in Figma for commands to work.
 
 ---
 
@@ -95,32 +92,34 @@ If Figma updates, the patch is removed — just run `desh connect` again.
 
 ```mermaid
 graph LR
-    A[desh CLI]:::neonPink -->|WebSocket CDP| B[Figma Desktop]:::neonPurple
-    A -->|REST API| C[Figma API]:::neonBlue
-    D[Your Codebase]:::neonGreen -->|tokens & components| A
-    B -->|localhost:9222| A
+    A[desh CLI]:::neonPink -->|HTTP| B[Bridge Server]:::neonYellow
+    B -->|WebSocket| C[desh Plugin]:::neonPurple
+    C -->|figma.* API| D[Figma Desktop]:::neonPurple
+    A -->|REST API| E[Figma API]:::neonBlue
+    F[Your Codebase]:::neonGreen -->|tokens & components| A
 
     classDef neonPink fill:#ff2d95,stroke:#ff2d95,color:#fff,stroke-width:2px
     classDef neonPurple fill:#7b2ff7,stroke:#7b2ff7,color:#fff,stroke-width:2px
     classDef neonBlue fill:#00d4ff,stroke:#00d4ff,color:#000,stroke-width:2px
     classDef neonGreen fill:#0fff50,stroke:#0fff50,color:#000,stroke-width:2px
+    classDef neonYellow fill:#ffe600,stroke:#ffe600,color:#000,stroke-width:2px
 
     linkStyle 0 stroke:#ff2d95,stroke-width:2px
-    linkStyle 1 stroke:#00d4ff,stroke-width:2px
-    linkStyle 2 stroke:#0fff50,stroke-width:2px
-    linkStyle 3 stroke:#7b2ff7,stroke-width:2px
+    linkStyle 1 stroke:#ffe600,stroke-width:2px
+    linkStyle 2 stroke:#7b2ff7,stroke-width:2px
+    linkStyle 3 stroke:#00d4ff,stroke-width:2px
+    linkStyle 4 stroke:#0fff50,stroke-width:2px
 ```
 
-desh patches Figma's `app.asar` to enable Chrome DevTools Protocol on port 9222. Each command:
+desh uses a **plugin bridge** — a Figma plugin communicates with a local WebSocket server. Each command:
 
-1. Connects via WebSocket
-2. Executes JavaScript in Figma's plugin context (`figma.*` API)
-3. Returns the result
-4. Disconnects
+1. Sends a request to the bridge server (auto-started)
+2. The bridge forwards it to the desh plugin running in Figma
+3. The plugin executes via the `figma.*` API and returns the result
+
+No binary patching, no elevated permissions, no re-setup after Figma updates.
 
 For library operations, desh also uses the Figma REST API (requires a personal access token).
-
-No daemon, no background process.
 
 ---
 
@@ -257,7 +256,8 @@ See [REFERENCE.md](REFERENCE.md) for the full prop reference.
 
 | Command | What it does |
 |---------|-------------|
-| `desh connect` | Patch Figma and verify CDP connection |
+| `desh connect` | Start bridge server, verify plugin connection |
+| `desh disconnect` | Stop the bridge server |
 | `desh init` | Scan project, generate config |
 | `desh sync` | Push tokens + components to Figma |
 | `desh tokens push` | Sync CSS variables to Figma |
@@ -346,25 +346,20 @@ After `bun link`, any `bun run build` automatically updates the global `desh` co
 
 ## Troubleshooting
 
-### Permission Error When Patching (macOS)
-
-System Settings → Privacy & Security → Full Disk Access → add Terminal → restart Terminal → close Figma → `desh connect`
-
-### Figma Not Connecting
+### Plugin Not Connecting
 
 1. Figma Desktop must be running (not the web version)
 2. Open a design file (not the home screen)
-3. Run `desh connect`
+3. Run the desh plugin: **Plugins → desh → Run**
+4. Run `desh connect`
 
-If Figma was updated, the patch was removed — `desh connect` detects this and re-patches automatically.
+### Bridge Server Won't Start
+
+The bridge server runs on port 3055 by default. If another process is using it, stop that process or check with `desh connect`.
 
 ### Connection Timeout After Heavy Operation
 
-If a large query freezes Figma, quit and reopen Figma. `desh connect` will reconnect.
-
-### Windows
-
-Run Command Prompt or PowerShell as Administrator, then `desh connect`.
+If a large query freezes Figma, quit and reopen Figma. Re-run the desh plugin, then `desh connect`.
 
 ---
 

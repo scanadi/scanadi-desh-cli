@@ -98,15 +98,19 @@ desh components sync     # Components only
 
 ## Connection
 
-Patches Figma once, then connects directly via CDP. No daemon, no background process.
+Uses a Figma plugin bridge. No binary patching, no special permissions needed.
 
 ```bash
 desh connect
 ```
 
-Each command connects → executes → disconnects automatically.
+1. Starts a local bridge server (auto-managed, exits after 5min idle)
+2. Checks if the desh plugin is running in Figma
+3. If not: prompts to open Figma → Plugins → desh → Run
 
-If permission error (macOS): System Settings → Privacy → Full Disk Access → Add Terminal
+Each command auto-starts the bridge server if needed. The plugin must be running in Figma.
+
+To stop the bridge server: `desh disconnect`
 
 ---
 
@@ -539,11 +543,10 @@ fontWeight="bold"     →  weight="bold"
 **Never show terminal commands to users.** Run silently, give friendly feedback.
 
 1. Run `desh init` to scan project
-2. Run `desh connect` to patch and connect
-3. Run `desh sync` to push tokens + components
-4. When connected, say: "Connected! What would you like to create?"
-
-If permission error (macOS): System Settings → Privacy → Full Disk Access → Add Terminal
+2. Run `desh connect` to start bridge server
+3. If plugin not connected: prompt user to open Figma → Plugins → desh → Run
+4. Run `desh sync` to push tokens + components
+5. When connected, say: "Connected! What would you like to create?"
 
 ---
 

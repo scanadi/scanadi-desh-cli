@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { createCdpClient } from '../cdp/client.js';
+import { createBridgeClient, ensureBridgeServer } from '../bridge/client.js';
 import { generateJsFromJsx } from '../codegen/jsx.js';
 import { error, success } from '../utils/output.js';
 
@@ -10,9 +10,9 @@ export function registerRenderCommand(program: Command): void {
     .action(async (jsx: string) => {
       try {
         const js = await generateJsFromJsx(jsx);
-        const client = await createCdpClient();
+        await ensureBridgeServer();
+        const client = createBridgeClient();
         const result = await client.evaluate(js, { timeout: 90_000 });
-        client.disconnect();
 
         if (result && typeof result === 'object') {
           console.log(JSON.stringify(result, null, 2));
@@ -37,7 +37,8 @@ export function registerRenderCommand(program: Command): void {
         }
 
         // Reuse a single connection for all items
-        const client = await createCdpClient();
+        await ensureBridgeServer();
+        const client = createBridgeClient();
         try {
           for (const jsx of items) {
             const js = await generateJsFromJsx(jsx);

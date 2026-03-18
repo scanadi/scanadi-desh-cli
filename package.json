@@ -1,6 +1,6 @@
 {
   "name": "design-shell",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Design Shell — CLI that bridges your React/Tailwind codebase to Figma Desktop",
   "type": "module",
   "bin": {
@@ -8,6 +8,7 @@
   },
   "files": [
     "dist",
+    "plugin",
     "LICENSE",
     "README.md"
   ],
@@ -28,7 +29,7 @@
     "shadcn",
     "design-tokens",
     "components",
-    "cdp",
+    "figma-plugin",
     "react"
   ],
   "repository": {

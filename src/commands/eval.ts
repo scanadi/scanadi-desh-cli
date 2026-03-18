@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { createCdpClient } from '../cdp/client.js';
+import { createBridgeClient, ensureBridgeServer } from '../bridge/client.js';
 import { error, printResult } from '../utils/output.js';
 
 export function registerEvalCommand(program: Command): void {
@@ -9,9 +9,9 @@ export function registerEvalCommand(program: Command): void {
     .option('--timeout <ms>', 'Timeout in milliseconds', '30000')
     .action(async (expression: string, opts: { timeout: string }) => {
       try {
-        const client = await createCdpClient();
+        await ensureBridgeServer();
+        const client = createBridgeClient();
         const result = await client.evaluate(expression, { timeout: parseInt(opts.timeout, 10) });
-        client.disconnect();
 
         if (result !== undefined) {
           printResult(result);

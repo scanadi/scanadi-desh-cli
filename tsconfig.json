@@ -14,5 +14,5 @@
     "isolatedModules": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", ".reference"]
+  "exclude": ["node_modules", "dist", ".reference", "plugin"]
 }

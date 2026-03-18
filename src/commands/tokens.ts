@@ -2,7 +2,7 @@ import type { Command } from 'commander';
 import { requireConfig } from '../config.js';
 import { extractTokens } from '../scanner/tokens.js';
 import { generateTokenSyncJs } from '../codegen/tokens.js';
-import { createCdpClient } from '../cdp/client.js';
+import { createBridgeClient, ensureBridgeServer } from '../bridge/client.js';
 import { success, error, info, status } from '../utils/output.js';
 import { join } from 'path';
 
@@ -28,9 +28,9 @@ export function registerTokenCommands(program: Command): void {
 
         status('Syncing to Figma...');
         const js = generateTokenSyncJs(tokenMap);
-        const client = await createCdpClient();
+        await ensureBridgeServer();
+        const client = createBridgeClient();
         const raw = await client.evaluate(js, { timeout: 60_000 });
-        client.disconnect();
         process.stdout.write('\r\x1b[K');
 
         const result = typeof raw === 'string' ? JSON.parse(raw) : raw as Record<string, unknown>;

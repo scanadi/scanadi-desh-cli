@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Inter, system-ui, -apple-system, sans-serif;
+    font-size: 12px;
+    padding: 12px;
+    color: var(--figma-color-text, #e0e0e0);
+    background: var(--figma-color-bg, #2c2c2c);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    gap: 8px;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--figma-color-border, #444);
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ef4444;
+    flex-shrink: 0;
+  }
+  .dot.connected { background: #22c55e; }
+  .dot.busy {
+    background: #3b82f6;
+    animation: pulse 1s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .title { font-weight: 600; flex: 1; }
+  .count {
+    font-size: 11px;
+    color: var(--figma-color-text-secondary, #999);
+  }
+  .log {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .entry {
+    font-size: 11px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    background: var(--figma-color-bg-secondary, #383838);
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .entry-icon { flex-shrink: 0; width: 14px; text-align: center; }
+  .entry-text {
+    flex: 1;
+    word-break: break-all;
+    font-family: monospace;
+    font-size: 10px;
+    line-height: 1.4;
+    max-height: 2.8em;
+    overflow: hidden;
+  }
+  .entry-dur {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--figma-color-text-secondary, #999);
+  }
+  .entry.ok .entry-icon { color: #22c55e; }
+  .entry.err .entry-icon { color: #ef4444; }
+  .entry.running .entry-icon { color: #3b82f6; }
+  .empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--figma-color-text-secondary, #999);
+    font-size: 11px;
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="dot" id="dot"></div>
+    <span class="title">desh</span>
+    <span class="count" id="count"></span>
+  </div>
+  <div class="log" id="log">
+    <div class="empty" id="empty">Waiting for commands...</div>
+  </div>
+
+  <script>
+    var PORT = 9001;
+    var BASE = 'http://localhost:' + PORT;
+    var dot = document.getElementById('dot');
+    var logEl = document.getElementById('log');
+    var countEl = document.getElementById('count');
+    var emptyEl = document.getElementById('empty');
+    var connected = false;
+    var execCount = 0;
+    var activeRequests = {};
+
+    function setConnected(v) {
+      connected = v;
+      dot.className = 'dot' + (v ? ' connected' : '');
+    }
+
+    function setBusy() {
+      dot.className = 'dot busy';
+    }
+
+    function updateCount() {
+      countEl.textContent = execCount > 0 ? execCount + ' executed' : '';
+    }
+
+    function summarizeCode(code) {
+      var m;
+      m = code.match(/figma\.currentPage\.name/);
+      if (m) return 'currentPage.name';
+      m = code.match(/figma\.currentPage\.children/);
+      if (m) return 'currentPage.children';
+      m = code.match(/figma\.(\w+)/);
+      if (m) return 'figma.' + m[1] + '(...)';
+      if (code.indexOf('async') === 0 || code.indexOf('(async') === 0) {
+        m = code.match(/\/\/\s*(.+)/);
+        if (m) return m[1].substring(0, 40);
+        return 'async eval';
+      }
+      return code.substring(0, 50);
+    }
+
+    function createEntry(id, code) {
+      var el = document.createElement('div');
+      el.className = 'entry running';
+      el.id = 'entry-' + id;
+
+      var icon = document.createElement('span');
+      icon.className = 'entry-icon';
+      icon.textContent = '\u25B6';
+      el.appendChild(icon);
+
+      var text = document.createElement('span');
+      text.className = 'entry-text';
+      text.textContent = summarizeCode(code);
+      el.appendChild(text);
+
+      var dur = document.createElement('span');
+      dur.className = 'entry-dur';
+      dur.textContent = '...';
+      el.appendChild(dur);
+
+      return el;
+    }
+
+    function addEntry(id, code) {
+      if (emptyEl) { emptyEl.remove(); emptyEl = null; }
+      var el = createEntry(id, code);
+      logEl.appendChild(el);
+      logEl.scrollTop = logEl.scrollHeight;
+      activeRequests[id] = Date.now();
+      setBusy();
+    }
+
+    function completeEntry(id, isError) {
+      var el = document.getElementById('entry-' + id);
+      if (!el) return;
+      var startTime = activeRequests[id] || Date.now();
+      var dur = Date.now() - startTime;
+      delete activeRequests[id];
+      el.className = 'entry ' + (isError ? 'err' : 'ok');
+      el.querySelector('.entry-icon').textContent = isError ? '\u2717' : '\u2713';
+      el.querySelector('.entry-dur').textContent = dur + 'ms';
+      execCount++;
+      updateCount();
+      if (Object.keys(activeRequests).length === 0) {
+        setConnected(true);
+      }
+      while (logEl.children.length > 20) {
+        logEl.removeChild(logEl.firstChild);
+      }
+    }
+
+    // Poll bridge server for commands
+    function poll() {
+      fetch(BASE + '/poll', { method: 'GET' })
+        .then(function (res) {
+          if (!connected) setConnected(true);
+          if (res.status === 204) { poll(); return; }
+          return res.json();
+        })
+        .then(function (msg) {
+          if (!msg) return;
+          if (msg.type === 'exec') {
+            parent.postMessage({ pluginMessage: msg }, '*');
+          }
+          poll();
+        })
+        .catch(function () {
+          setConnected(false);
+          setTimeout(poll, 3000);
+        });
+    }
+
+    // Receive messages from sandbox
+    window.onmessage = function (event) {
+      var msg = event.data && event.data.pluginMessage;
+      if (!msg || !msg.id) return;
+
+      if (msg.type === 'exec-start') {
+        addEntry(msg.id, msg.code || '');
+        return;
+      }
+
+      var isError = msg.type === 'error';
+      completeEntry(msg.id, isError);
+
+      fetch(BASE + '/result', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(msg)
+      }).catch(function () {});
+    };
+
+    poll();
+  </script>
+</body>
+</html>
