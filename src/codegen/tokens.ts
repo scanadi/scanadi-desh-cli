@@ -156,6 +156,6 @@ export function generateTokenSyncJs(tokens: TokenMap): string {
       }
     }
 
-    return { created, floatCreated, alphaWarnings, collections: ['semantic', floatVarDefs.length > 0 ? 'primitives' : null].filter(Boolean) };
+    return { created, floatCreated, alphaWarnings, collection: 'semantic' + (floatVarDefs.length > 0 ? ' + primitives' : '') };
   })()`;
 }

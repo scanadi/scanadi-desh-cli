@@ -11,7 +11,7 @@ import { readdirSync, statSync } from 'fs';
 function collectFiles(dir: string, files: string[] = []): string[] {
   try {
     for (const entry of readdirSync(dir)) {
-      if (entry.startsWith('.') || entry === 'node_modules' || entry === 'index.ts' || entry === 'index.tsx') continue;
+      if (entry.startsWith('.') || entry === 'node_modules') continue;
       const full = join(dir, entry);
       try {
         const stat = statSync(full);
@@ -135,9 +135,10 @@ export function registerComponentCommands(program: Command): void {
         info(`Pushing ${components.length} component(s) to Figma...\n`);
 
         // Get Figma file info for registry
-        const fileInfo = await runFigmaCode<{ fileKey: string; pageId: string }>(
+        const fileInfoRaw = await runFigmaCode<string>(
           'JSON.stringify({ fileKey: figma.fileKey || "", pageId: figma.currentPage.id })'
         );
+        const fileInfo = typeof fileInfoRaw === 'string' ? JSON.parse(fileInfoRaw) : fileInfoRaw as { fileKey: string; pageId: string };
 
         // Run preamble: load fonts, variables, init state
         progressBar(0, components.length, 'Pushing', 'Loading fonts & variables...');
@@ -174,7 +175,8 @@ export function registerComponentCommands(program: Command): void {
         progressDone();
 
         // Summary
-        const summary = await runFigmaCode<{ created: number; components: Array<{ name: string; id: string; type: string }> }>(generateSummaryJs(), 10_000);
+        const summaryRaw = await runFigmaCode<string>(generateSummaryJs(), 10_000);
+        const summary = typeof summaryRaw === 'string' ? JSON.parse(summaryRaw) : summaryRaw as { created: number; components: Array<{ name: string; id: string; type: string }> };
 
         console.log('');
         if (summary?.components && summary.components.length > 0) {

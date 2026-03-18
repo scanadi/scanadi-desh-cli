@@ -26,7 +26,7 @@ interface ParsedProps {
 interface ParsedElement extends ParsedProps {
   _type: string;      // will be one of: frame, text, rect, image, icon, slot, instance
   _index: string;     // numeric string, stringified for storage in ParsedProps
-  _tagName?: string;  // original tag name for instance elements (e.g. "Button", "Card")
+  _tagName: string;   // original tag name for instance elements (e.g. "Button", "Card"), empty string if not instance
 }
 
 /**

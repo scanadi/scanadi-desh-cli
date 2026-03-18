@@ -29,12 +29,17 @@ export function registerTokenCommands(program: Command): void {
         status('Syncing to Figma...');
         const js = generateTokenSyncJs(tokenMap);
         const client = await createCdpClient();
-        const result = await client.evaluate(js, { timeout: 60_000 }) as { created: number; collection: string } | undefined;
+        const raw = await client.evaluate(js, { timeout: 60_000 });
         client.disconnect();
         process.stdout.write('\r\x1b[K');
 
+        const result = typeof raw === 'string' ? JSON.parse(raw) : raw as Record<string, unknown>;
         if (result) {
-          success(`Synced ${result.created} variables to "${result.collection}" collection`);
+          const created = (result.created as number ?? 0) + (result.floatCreated as number ?? 0);
+          success(`Synced ${created} variables to "${result.collection}"`);
+          if ((result.alphaWarnings as string[])?.length > 0) {
+            for (const w of result.alphaWarnings as string[]) console.log(`  ⚠ ${w}`);
+          }
         } else {
           success('Token sync complete');
         }

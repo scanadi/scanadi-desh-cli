@@ -17,7 +17,7 @@ import { error, info, success, warn, progress, progressDone, progressBar } from 
 function collectFiles(dir: string, files: string[] = []): string[] {
   try {
     for (const entry of readdirSync(dir)) {
-      if (entry.startsWith('.') || entry === 'node_modules' || entry === 'index.ts' || entry === 'index.tsx') continue;
+      if (entry.startsWith('.') || entry === 'node_modules') continue;
       const full = join(dir, entry);
       try {
         const stat = statSync(full);
@@ -79,14 +79,17 @@ export function registerSyncCommand(program: Command): void {
           const cssFiles = config.tokens.map(f => join(config.configDir, f));
           const tokenMap = await extractTokens(cssFiles);
           const lightCount = Object.keys(tokenMap.light).length;
+          const themeCount = Object.keys(tokenMap.theme).length;
 
-          if (lightCount === 0) {
+          if (lightCount === 0 && themeCount === 0) {
             if (!opts.json) console.log(`\x1b[33m⚠\x1b[0m  No CSS variables found`);
           } else {
             const js = generateTokenSyncJs(tokenMap);
-            const result = await runFigmaCode<{ created: number; collection: string }>(js, 60_000);
-            results.tokens = result;
-            if (!opts.json) console.log(`\x1b[32m✓\x1b[0m  ${result.created} variables → "${result.collection}"`);
+            const raw = await runFigmaCode<string>(js, 60_000);
+            const tokenResult = typeof raw === 'string' ? JSON.parse(raw) : raw as Record<string, unknown>;
+            const totalCreated = (tokenResult.created as number ?? 0) + (tokenResult.floatCreated as number ?? 0);
+            results.tokens = { created: totalCreated, collection: String(tokenResult.collection ?? 'semantic') };
+            if (!opts.json) console.log(`\x1b[32m✓\x1b[0m  ${totalCreated} variables → "${tokenResult.collection}"`);
           }
         } catch (e) {
           results.errors.push(`tokens: ${(e as Error).message}`);
