@@ -261,6 +261,10 @@ Run Command Prompt or PowerShell as Administrator, then `desh connect`.
 
 ---
 
+## Author
+
+**[Stevica Canadi](https://github.com/scanadi)**
+
 ## License
 
-MIT
+AGPL-3.0 — see [LICENSE](LICENSE) for details. Attribution required for all derivative works.
