@@ -31,24 +31,29 @@ desh connects directly to Figma Desktop via Chrome DevTools Protocol and gives y
 
 ## Installation
 
-**Prerequisites:** [Bun](https://bun.sh) or Node.js 18+, Figma Desktop (macOS or Windows)
+**Prerequisites:** Node.js 18+ or [Bun](https://bun.sh), Figma Desktop (macOS or Windows)
 
 ```bash
-# Clone the repo
-git clone https://github.com/scanadi/scanadi-desh-cli.git
-cd scanadi-desh-cli
-
-# Install dependencies
-bun install
-
-# Build
-bun run build
-
-# Link globally (makes `desh` available everywhere)
-bun link
+npm install -g design-shell
 ```
 
-After `bun link`, the `desh` command is available in any terminal. After making changes, just run `bun run build` — the link updates automatically.
+That's it. The `desh` command is now available globally.
+
+```bash
+# Or with bun
+bun add -g design-shell
+
+# Or use npx (no install needed)
+npx design-shell connect
+```
+
+### From Source
+
+```bash
+git clone https://github.com/scanadi/scanadi-desh-cli.git
+cd scanadi-desh-cli
+bun install && bun run build && bun link
+```
 
 ---
 

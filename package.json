@@ -1,21 +1,49 @@
 {
-  "name": "desh",
+  "name": "design-shell",
   "version": "0.1.0",
-  "description": "Design Shell — control Figma Desktop from the command line",
+  "description": "Design Shell — CLI that bridges your React/Tailwind codebase to Figma Desktop",
   "type": "module",
   "bin": {
     "desh": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
-    "start": "bun dist/cli.js"
+    "start": "bun dist/cli.js",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "figma",
+    "design-system",
+    "cli",
+    "tailwind",
+    "shadcn",
+    "design-tokens",
+    "components",
+    "cdp",
+    "react"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/scanadi/scanadi-desh-cli.git"
+  },
+  "homepage": "https://github.com/scanadi/scanadi-desh-cli",
+  "bugs": {
+    "url": "https://github.com/scanadi/scanadi-desh-cli/issues"
   },
   "license": "AGPL-3.0-or-later",
   "author": "Stevica Canadi <stevica.canadi@gmail.com>",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "chalk": "^5.6.2",
     "commander": "^14.0.3",
