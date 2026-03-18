@@ -1,0 +1,55 @@
+import type { Command } from 'commander';
+import { createCdpClient } from '../cdp/client.js';
+import { generateJsFromJsx } from '../codegen/jsx.js';
+import { error, success } from '../utils/output.js';
+
+export function registerRenderCommand(program: Command): void {
+  program
+    .command('render <jsx>')
+    .description('Render JSX to Figma')
+    .action(async (jsx: string) => {
+      try {
+        const js = await generateJsFromJsx(jsx);
+        const client = await createCdpClient();
+        const result = await client.evaluate(js, { timeout: 90_000 });
+        client.disconnect();
+
+        if (result && typeof result === 'object') {
+          console.log(JSON.stringify(result, null, 2));
+        }
+        success('Rendered');
+      } catch (err) {
+        error(String((err as Error).message));
+        process.exit(1);
+      }
+    });
+
+  program
+    .command('render-batch <jsxArray>')
+    .description('Render multiple JSX frames')
+    .option('-d, --direction <dir>', 'Layout direction: row or col', 'row')
+    .option('-g, --gap <n>', 'Gap between frames', '40')
+    .action(async (jsxArray: string, opts: { direction: string; gap: string }) => {
+      try {
+        const items = JSON.parse(jsxArray) as string[];
+        if (!Array.isArray(items)) {
+          throw new Error('Argument must be a JSON array of JSX strings');
+        }
+
+        // Reuse a single connection for all items
+        const client = await createCdpClient();
+        try {
+          for (const jsx of items) {
+            const js = await generateJsFromJsx(jsx);
+            await client.evaluate(js, { timeout: 60_000 });
+          }
+        } finally {
+          client.disconnect();
+        }
+        success(`Rendered ${items.length} frames`);
+      } catch (err) {
+        error(String((err as Error).message));
+        process.exit(1);
+      }
+    });
+}
