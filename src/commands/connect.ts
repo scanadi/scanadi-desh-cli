@@ -1,6 +1,10 @@
 import type { Command } from 'commander';
 import { execFileSync } from 'child_process';
 import { ensureBridgeServer, isBridgeRunning, isPluginConnected, createBridgeClient } from '../bridge/client.js';
+import { createCdpClient } from '../cdp/client.js';
+import { isPatched, patchFigma, unpatchFigma, getCdpPort } from '../patch/figma.js';
+import { startFigmaApp, isFigmaRunning as platformIsFigmaRunning } from '../patch/platform.js';
+import { isCdpMode } from '../utils/figma-eval.js';
 import { readPidFile } from '../bridge/server.js';
 import { ensurePluginFiles, isPluginSetUp, getPluginDir } from '../utils/plugin-setup.js';
 import { success, error, info, warn, status } from '../utils/output.js';
@@ -45,12 +49,103 @@ async function waitForPlugin(): Promise<boolean> {
   return false;
 }
 
+async function waitForCdp(): Promise<boolean> {
+  const start = Date.now();
+  let dots = 0;
+
+  while (Date.now() - start < POLL_TIMEOUT) {
+    try {
+      const client = await createCdpClient();
+      client.disconnect();
+      process.stdout.write('\r\x1b[K');
+      return true;
+    } catch {
+      // Not ready yet
+    }
+    dots = (dots + 1) % 4;
+    status(`Waiting for Figma CDP connection${'.'.repeat(dots)}`);
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+  }
+
+  process.stdout.write('\r\x1b[K');
+  return false;
+}
+
+/**
+ * CDP-mode connect: patch Figma, restart with --remote-debugging-port, verify.
+ */
+async function connectCdp(): Promise<void> {
+  const patchStatus = isPatched();
+
+  if (patchStatus === false) {
+    info('Patching Figma to enable CDP...');
+    patchFigma();
+    success('Figma patched');
+  } else if (patchStatus === true) {
+    info('Figma already patched');
+  } else {
+    info('Patching Figma...');
+    patchFigma();
+    success('Figma patched');
+  }
+
+  // Check if CDP is already reachable
+  try {
+    const client = await createCdpClient();
+    const pageInfo = (await client.evaluate(
+      '(function() { return { name: figma.currentPage.name, id: figma.currentPage.id }; })()',
+    )) as { name: string; id: string } | undefined;
+    client.disconnect();
+    success(pageInfo ? `Connected via CDP to "${pageInfo.name}"` : 'Connected via CDP');
+    return;
+  } catch {
+    // Not connected yet — need to (re)start Figma
+  }
+
+  // Restart Figma with CDP flag
+  if (isFigmaRunning()) {
+    warn('Figma needs to restart with CDP enabled.');
+    info('Please close Figma and press Enter, or wait...');
+    // Try to start anyway — if Figma is already running with the flag it'll work
+  }
+
+  const port = getCdpPort();
+  info(`Starting Figma with --remote-debugging-port=${port}...`);
+  startFigmaApp(port);
+
+  // Wait for CDP to come up
+  await new Promise((r) => setTimeout(r, 3000));
+
+  if (await waitForCdp()) {
+    try {
+      const client = await createCdpClient();
+      const pageInfo = (await client.evaluate(
+        '(function() { return { name: figma.currentPage.name, id: figma.currentPage.id }; })()',
+      )) as { name: string; id: string } | undefined;
+      client.disconnect();
+      success(pageInfo ? `Connected via CDP to "${pageInfo.name}"` : 'Connected via CDP');
+    } catch {
+      success('CDP port is open — open a design file in Figma to start');
+    }
+  } else {
+    warn('Timed out waiting for CDP connection.');
+    info(`Make sure Figma is running with --remote-debugging-port=${port}`);
+  }
+}
+
 export function registerConnectCommand(program: Command): void {
   program
     .command('connect')
     .description('Start bridge server and verify plugin connection')
     .action(async () => {
       try {
+        // CDP mode — patch + connect directly
+        if (isCdpMode()) {
+          await connectCdp();
+          return;
+        }
+
+        // Bridge mode (default)
         // 1. Ensure plugin files are at ~/.desh/plugin/
         const wasSetUp = isPluginSetUp();
         const pluginDir = ensurePluginFiles();
@@ -139,6 +234,46 @@ export function registerConnectCommand(program: Command): void {
         } else {
           warn('No PID file found');
         }
+      } catch (err) {
+        error(String((err as Error).message));
+        process.exit(1);
+      }
+    });
+
+  // --- Patch / Unpatch commands ---
+
+  program
+    .command('patch')
+    .description('Patch Figma to enable CDP (Chrome DevTools Protocol) access')
+    .action(() => {
+      try {
+        const status = isPatched();
+        if (status === true) {
+          info('Figma is already patched');
+          return;
+        }
+        patchFigma();
+        success('Figma patched — restart Figma to enable CDP');
+        info('Tip: Use `desh connect --cdp` to auto-restart with CDP enabled');
+      } catch (err) {
+        error(String((err as Error).message));
+        process.exit(1);
+      }
+    });
+
+  program
+    .command('unpatch')
+    .description('Restore Figma to original state (remove CDP patch)')
+    .action(() => {
+      try {
+        const status = isPatched();
+        if (status === false) {
+          info('Figma is not patched');
+          return;
+        }
+        unpatchFigma();
+        success('Figma restored to original state');
+        info('Restart Figma for changes to take effect');
       } catch (err) {
         error(String((err as Error).message));
         process.exit(1);

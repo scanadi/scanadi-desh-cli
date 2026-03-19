@@ -1,5 +1,7 @@
 import type { Command } from 'commander';
 import { createBridgeClient, ensureBridgeServer } from '../bridge/client.js';
+import { createCdpClient } from '../cdp/client.js';
+import { isCdpMode } from '../utils/figma-eval.js';
 import { error, printResult } from '../utils/output.js';
 
 export function registerEvalCommand(program: Command): void {
@@ -9,9 +11,21 @@ export function registerEvalCommand(program: Command): void {
     .option('--timeout <ms>', 'Timeout in milliseconds', '30000')
     .action(async (expression: string, opts: { timeout: string }) => {
       try {
-        await ensureBridgeServer();
-        const client = createBridgeClient();
-        const result = await client.evaluate(expression, { timeout: parseInt(opts.timeout, 10) });
+        const timeout = parseInt(opts.timeout, 10);
+        let result: unknown;
+
+        if (isCdpMode()) {
+          const client = await createCdpClient();
+          try {
+            result = await client.evaluate(expression, { timeout });
+          } finally {
+            client.disconnect();
+          }
+        } else {
+          await ensureBridgeServer();
+          const client = createBridgeClient();
+          result = await client.evaluate(expression, { timeout });
+        }
 
         if (result !== undefined) {
           printResult(result);

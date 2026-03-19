@@ -1,7 +1,17 @@
 import type { Command } from 'commander';
 import { createBridgeClient, ensureBridgeServer } from '../bridge/client.js';
+import { createCdpClient } from '../cdp/client.js';
+import { isCdpMode } from '../utils/figma-eval.js';
 import { generateJsFromJsx } from '../codegen/jsx.js';
 import { error, success } from '../utils/output.js';
+
+async function getFigmaClient() {
+  if (isCdpMode()) {
+    return await createCdpClient();
+  }
+  await ensureBridgeServer();
+  return createBridgeClient();
+}
 
 export function registerRenderCommand(program: Command): void {
   program
@@ -10,14 +20,16 @@ export function registerRenderCommand(program: Command): void {
     .action(async (jsx: string) => {
       try {
         const js = await generateJsFromJsx(jsx);
-        await ensureBridgeServer();
-        const client = createBridgeClient();
-        const result = await client.evaluate(js, { timeout: 90_000 });
-
-        if (result && typeof result === 'object') {
-          console.log(JSON.stringify(result, null, 2));
+        const client = await getFigmaClient();
+        try {
+          const result = await client.evaluate(js, { timeout: 90_000 });
+          if (result && typeof result === 'object') {
+            console.log(JSON.stringify(result, null, 2));
+          }
+          success('Rendered');
+        } finally {
+          client.disconnect();
         }
-        success('Rendered');
       } catch (err) {
         error(String((err as Error).message));
         process.exit(1);
@@ -36,9 +48,7 @@ export function registerRenderCommand(program: Command): void {
           throw new Error('Argument must be a JSON array of JSX strings');
         }
 
-        // Reuse a single connection for all items
-        await ensureBridgeServer();
-        const client = createBridgeClient();
+        const client = await getFigmaClient();
         try {
           for (const jsx of items) {
             const js = await generateJsFromJsx(jsx);

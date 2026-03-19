@@ -6,10 +6,23 @@ Full command reference for the Design Shell CLI. For quick start, see CLAUDE.md.
 
 ```bash
 desh init                          # Scan project, generate desh.config.json
-desh connect                       # Patch Figma once + verify CDP
+desh connect                       # Connect via plugin bridge (default)
+desh connect --cdp                 # Connect via CDP (fast, requires patch)
+desh disconnect                    # Stop the bridge server
 desh sync                          # Full sync: tokens + components + icons + fonts
 desh files                         # List open Figma files
 ```
+
+### CDP Mode (Fast)
+
+```bash
+desh patch                         # Patch Figma binary to enable CDP
+desh unpatch                       # Restore Figma to original state
+DESH_USE_CDP=1 desh <command>      # Use CDP for any command
+export DESH_USE_CDP=1              # Use CDP for all commands in session
+```
+
+CDP connects directly via Chrome DevTools Protocol (~10x faster). Requires Full Disk Access on macOS. Figma updates may require re-patching.
 
 ## Design Tokens & Variables
 

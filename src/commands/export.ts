@@ -4,7 +4,7 @@ import { converter } from 'culori';
 import { runFigmaCode } from '../utils/figma-eval.js';
 import { error, success } from '../utils/output.js';
 
-const toOklch = converter('oklch');
+const toOklch = converter('oklch') as unknown as (color: { mode: string; r: number; g: number; b: number }) => { l: number; c: number; h?: number } | undefined;
 
 function rgbToOklch(r: number, g: number, b: number): string {
   const c = toOklch({ mode: 'rgb', r, g, b });
