@@ -300,6 +300,9 @@ export function registerLibCommands(program: Command): void {
     .option('-y <number>', 'Y position')
     .action(async (component: string, opts: { x?: string; y?: string }) => {
       try {
+        // Detect if input looks like a component key hash (hex string, 20-40 chars)
+        const isKeyHash = /^[a-f0-9]{20,}$/i.test(component);
+
         status('Creating instance...');
         const raw = await runFigmaCode<string>(`(async () => {
   // Smart positioning
@@ -316,27 +319,33 @@ export function registerLibCommands(program: Command): void {
   }
 
   const name = ${JSON.stringify(component)};
+  const isKeyHash = ${isKeyHash};
 
-  // 1. Try as component key (hash)
+  // 1. Try as component key (hash) — importComponentByKeyAsync
   try {
+    await __deshYield(1);
     const comp = await figma.importComponentByKeyAsync(name);
     if (comp) {
+      await __deshYield(1);
       const inst = comp.createInstance();
       inst.x = x; inst.y = y;
       figma.currentPage.selection = [inst];
-      figma.viewport.scrollAndZoomIntoView([inst]);
       return JSON.stringify({ name: inst.name, id: inst.id, source: 'library-key' });
     }
-  } catch (e) {}
+  } catch (e) {
+    // If input was a key hash and import failed, don't fall through to expensive searches
+    if (isKeyHash) return JSON.stringify(null);
+  }
 
-  // 2. Find existing instance of this component in the file and clone from it
-  // Search current page first (fast), then scan top-level of other pages
+  // 2. Find existing instance on CURRENT PAGE ONLY (depth-limited, with yields)
+  // Skip this entirely for key hashes — they should only use importComponentByKeyAsync
   let mainComp = null;
+  const MAX_DEPTH = 3;
+  let searched = 0;
 
-  // Search current page (depth-limited)
-  const MAX_DEPTH = 4;
   function findInstance(node, depth) {
-    if (depth > MAX_DEPTH || mainComp) return;
+    if (depth > MAX_DEPTH || mainComp || searched > 500) return;
+    searched++;
     if (node.type === 'INSTANCE') {
       try {
         const mc = node.mainComponent;
@@ -357,38 +366,19 @@ export function registerLibCommands(program: Command): void {
   for (const child of figma.currentPage.children) {
     findInstance(child, 0);
     if (mainComp) break;
-  }
-
-  // If not found on current page, search other pages (shallow)
-  if (!mainComp) {
-    for (const page of figma.root.children) {
-      if (page === figma.currentPage) continue;
-      for (const child of page.children) {
-        findInstance(child, 0);
-        if (mainComp) break;
-      }
-      if (mainComp) break;
-    }
+    // Yield every 50 nodes to keep Figma responsive
+    if (searched % 50 === 0) await __deshYield(1);
   }
 
   if (mainComp) {
+    await __deshYield(1);
     const inst = mainComp.createInstance();
     inst.x = x; inst.y = y;
     figma.currentPage.selection = [inst];
-    figma.viewport.scrollAndZoomIntoView([inst]);
     return JSON.stringify({ name: inst.name, id: inst.id, source: 'library-instance', componentKey: mainComp.key });
   }
 
-  // 3. Fallback: find local component by name
-  const found = figma.currentPage.findOne(n => n.type === 'COMPONENT' && n.name.includes(name));
-  if (found && found.type === 'COMPONENT') {
-    const inst = found.createInstance();
-    inst.x = x; inst.y = y;
-    figma.currentPage.selection = [inst];
-    return JSON.stringify({ name: inst.name, id: inst.id, source: 'local' });
-  }
-
-  // Return null so we can try the REST API fallback on the Node.js side
+  // Return null — REST API fallback happens on Node.js side (no more expensive page searches)
   return JSON.stringify(null);
 })()`, 30_000);
 
