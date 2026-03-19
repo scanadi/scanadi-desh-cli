@@ -68,6 +68,7 @@ import {
 } from './shared.js';
 
 import { loadRegistry, type ComponentRegistry } from '../registry.js';
+import { loadComponentMap, type ComponentMap } from '../linker/component-map.js';
 
 // ---------------------------------------------------------------------------
 // Fill / stroke code generation (handles var: binding)
@@ -317,7 +318,7 @@ export function parseChildren(childrenStr: string, registryNames?: Set<string>):
 // Code generation
 // ---------------------------------------------------------------------------
 
-function generateCode(props: ParsedProps, children: ParsedElement[], registry?: ComponentRegistry): string {
+function generateCode(props: ParsedProps, children: ParsedElement[], registry?: ComponentRegistry, componentMap?: ComponentMap): string {
   const name = props.name || 'Frame';
   const rawWidth = props.w ?? props.width;
   const rawHeight = props.h ?? props.height;
@@ -727,7 +728,7 @@ function generateCode(props: ParsedProps, children: ParsedElement[], registry?: 
         }
       `;
 
-  // Registry instance helper (only if registry has entries and instance elements exist)
+  // Instance helper (supports both registry entries and component map library imports)
   const hasInstanceElements = (function checkInstances(items: ParsedElement[]): boolean {
     for (const item of items) {
       if (item._type === 'instance') return true;
@@ -737,41 +738,92 @@ function generateCode(props: ParsedProps, children: ParsedElement[], registry?: 
     return false;
   })(children);
 
-  const registryCode = (hasInstanceElements && registry && Object.keys(registry.components).length > 0) ? `
-        const __registry = ${JSON.stringify(registry.components)};
+  const hasRegistry = registry && Object.keys(registry.components).length > 0;
+  const hasComponentMap = componentMap && Object.keys(componentMap.components).length > 0;
+
+  // Build a simplified component map for injection into generated code
+  // Only include fields needed at runtime: figmaKey and figmaType
+  const compMapForRuntime: Record<string, { figmaKey: string; figmaType: string }> = {};
+  if (hasComponentMap) {
+    for (const [name, entry] of Object.entries(componentMap!.components)) {
+      if (entry.figmaKey) {
+        compMapForRuntime[name] = { figmaKey: entry.figmaKey, figmaType: entry.figmaType };
+      }
+    }
+  }
+
+  const registryCode = (hasInstanceElements && (hasRegistry || hasComponentMap)) ? `
+        const __registry = ${JSON.stringify(hasRegistry ? registry!.components : {})};
+        const __componentMap = ${JSON.stringify(compMapForRuntime)};
         async function __tryCreateInstance(tagName, props, textContent) {
-          const entry = __registry[tagName];
-          if (!entry) return null;
-          try {
-            const node = await figma.getNodeByIdAsync(entry.nodeId);
-            if (!node) return null;
-            let instance;
-            if (node.type === 'COMPONENT_SET') {
-              instance = node.defaultVariant.createInstance();
-              // Map JSX props to variant properties via registry property map
-              if (entry.properties && props) {
-                const toSet = {};
-                for (const [cleanName, figmaKey] of Object.entries(entry.properties)) {
-                  if (props[cleanName] !== undefined) toSet[figmaKey] = props[cleanName];
+          // Path 1: Registry (local node IDs from desh components push)
+          const regEntry = __registry[tagName];
+          if (regEntry) {
+            try {
+              const node = await figma.getNodeByIdAsync(regEntry.nodeId);
+              if (node) {
+                let instance;
+                if (node.type === 'COMPONENT_SET') {
+                  instance = node.defaultVariant.createInstance();
+                  if (regEntry.properties && props) {
+                    const toSet = {};
+                    for (const [cleanName, figmaKey] of Object.entries(regEntry.properties)) {
+                      if (props[cleanName] !== undefined) toSet[figmaKey] = props[cleanName];
+                    }
+                    if (Object.keys(toSet).length > 0) instance.setProperties(toSet);
+                  }
+                } else if (node.type === 'COMPONENT') {
+                  instance = node.createInstance();
                 }
-                if (Object.keys(toSet).length > 0) instance.setProperties(toSet);
+                if (instance) {
+                  if (textContent) {
+                    const tn = instance.findOne(n => n.type === 'TEXT');
+                    if (tn) { await figma.loadFontAsync(tn.fontName); tn.characters = textContent; }
+                  }
+                  return instance;
+                }
               }
-            } else if (node.type === 'COMPONENT') {
-              instance = node.createInstance();
-            }
-            if (!instance) return null;
-            // Set text content if provided
-            if (textContent) {
-              const tn = instance.findOne(n => n.type === 'TEXT');
-              if (tn) {
-                await figma.loadFontAsync(tn.fontName);
-                tn.characters = textContent;
-              }
-            }
-            return instance;
-          } catch(e) {
-            return null; // stale registry entry, fall back to placeholder
+            } catch(e) { /* stale registry entry, fall through to component map */ }
           }
+
+          // Path 2: Component map (library import keys from desh components link)
+          const mapEntry = __componentMap[tagName];
+          if (mapEntry) {
+            try {
+              await __deshYield(1); // yield before heavy library import
+              const comp = await figma.importComponentByKeyAsync(mapEntry.figmaKey);
+              if (!comp) return null;
+              let instance;
+              if (comp.type === 'COMPONENT_SET') {
+                instance = comp.defaultVariant.createInstance();
+                // Try to set variant properties from JSX props
+                if (props && Object.keys(props).length > 0) {
+                  try {
+                    const compProps = instance.componentProperties;
+                    const toSet = {};
+                    for (const [propKey, propDef] of Object.entries(compProps)) {
+                      const cleanName = propKey.split('#')[0].toLowerCase();
+                      for (const [jsxKey, jsxVal] of Object.entries(props)) {
+                        if (jsxKey.toLowerCase() === cleanName) { toSet[propKey] = jsxVal; break; }
+                      }
+                    }
+                    if (Object.keys(toSet).length > 0) instance.setProperties(toSet);
+                  } catch(e) { /* variant prop mismatch — instance still valid */ }
+                }
+              } else if (comp.type === 'COMPONENT') {
+                instance = comp.createInstance();
+              }
+              if (instance) {
+                if (textContent) {
+                  const tn = instance.findOne(n => n.type === 'TEXT');
+                  if (tn) { await figma.loadFontAsync(tn.fontName); tn.characters = textContent; }
+                }
+                return instance;
+              }
+            } catch(e) { return null; }
+          }
+
+          return null;
         }
     ` : `
         async function __tryCreateInstance() { return null; }
@@ -884,7 +936,14 @@ function fontStyle(weight: string): string {
 export async function generateJsFromJsx(jsx: string): Promise<string> {
   // Load registry (returns empty registry if no .desh-registry.json exists)
   const registry = loadRegistry(process.cwd());
-  const registryNames = new Set(Object.keys(registry.components));
+  // Load component map (linked library components from desh components link)
+  const componentMap = loadComponentMap(process.cwd());
+
+  // Merge names from both sources so JSX tag matching recognizes all known components
+  const allNames = new Set([
+    ...Object.keys(registry.components),
+    ...Object.keys(componentMap.components),
+  ]);
 
   // Find opening Frame tag
   const openMatch = jsx.match(/<Frame\s+([^>]*)>/);
@@ -898,9 +957,9 @@ export async function generateJsFromJsx(jsx: string): Promise<string> {
   // Find matching closing tag
   const inner = extractContent(jsx.slice(startIdx), 'Frame');
 
-  // Parse props and children (pass registry names so component tags are recognized)
+  // Parse props and children (pass all known names so component tags are recognized)
   const props = parseProps(propsStr);
-  const childElements = parseChildren(inner, registryNames.size > 0 ? registryNames : undefined);
+  const childElements = parseChildren(inner, allNames.size > 0 ? allNames : undefined);
 
-  return generateCode(props, childElements, registry);
+  return generateCode(props, childElements, registry, componentMap);
 }

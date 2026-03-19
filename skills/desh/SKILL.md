@@ -24,27 +24,33 @@ Every task follows this sequence. You cannot skip ahead.
 
 ### Step 1: Discover (always)
 
+**Start with local files — they have everything you need:**
 ```bash
 desh connect
 
-# What's in Figma already?
+# 1. Read the component map FIRST — it has all linked component keys
+cat .desh-component-map.json        # figmaKey, figmaNodeId, variants for every linked component
+cat desh.config.json                 # library fileKey, token paths, component dirs
+
+# 2. Then check Figma state
 desh pages list
 desh canvas info
 desh lib list
 desh lib collections
-desh lib components --all-pages
 
-# What's in the codebase?
+# 3. Only if needed (component NOT in the map)
+desh lib search "ComponentName" --file "LIBRARY_FILE_KEY"
 desh components list               # scans code, shows what can be pushed
-desh components linked             # show linked code↔Figma mappings
-cat desh.config.json               # if it exists
 ```
 
+**CRITICAL: `.desh-component-map.json` is your primary lookup.** It contains every linked component's `figmaKey` and `figmaNodeId`. Do NOT run `desh lib search` for components that are already in the map — it wastes time and the map already has the keys you need. Only search the library for components NOT in the map (e.g., Sidebar blocks, Pro Blocks, project-specific table cells, icons).
+
 After this step you should know:
-- What Figma library components are available
+- What components are linked (from `.desh-component-map.json`)
+- What library fileKey to use for searches (from `desh.config.json`)
+- What Figma library components are available beyond the linked set
 - What local variables/collections exist
 - What code components exist but aren't in Figma yet
-- Which code components are already linked to Figma library components
 
 ### Step 2: Decide how to create (always)
 
@@ -63,13 +69,45 @@ Does it exist as a Figma library component?
 
 If you reach "desh render" — you're building a **layout container** (a page frame, a section wrapper, a grid), not a component. Components come from code or libraries. Layouts are the glue between them.
 
+### Step 2b: Plan before building (for composite layouts)
+
+When building a page or screen that contains multiple UI elements, **categorize every element BEFORE writing any render call:**
+
+| Element | Library component? | Action |
+|---------|-------------------|--------|
+| Page frame, section wrapper, grid | NO | `desh render` layout frame |
+| Button, Badge, Input, Checkbox... | YES (check `.desh-component-map.json`) | Use `<Button>` tag in render JSX — auto-instances from library |
+| Custom code component not in Figma | Code exists | `desh components push` first, then use tag in render |
+| Truly custom (no component anywhere) | NO | `desh render` raw `<Frame>` + `<Text>` |
+
 ### Step 3: Build
 
-**If using library components:**
+**`desh render` auto-instances linked library components.** When `.desh-component-map.json` exists, component tags like `<Button>`, `<Badge>`, `<Input>` in JSX are automatically resolved to real Figma library instances via `importComponentByKeyAsync()`. No separate `desh lib instance` calls needed.
+
+**Composite layouts (the common case):**
 ```bash
-desh lib search "Button" --file "LIBRARY_FILE_KEY"
-desh lib instance "component-key-hash"
+# Just use component tags directly in render JSX — they auto-instance from the library
+desh render '<Frame name="Page" w={1440} h={900} flex="row">
+  <Frame name="Sidebar" w={256} h="fill" flex="col" bg="var:sidebar">
+    <Button variant="ghost" size="sm">Portfolio</Button>
+    <Separator />
+  </Frame>
+  <Frame name="Main" flex="col" grow={1}>
+    <Frame name="Header" w="fill" h={56} flex="row" items="center">
+      <Breadcrumb />
+      <Input placeholder="Search..." />
+    </Frame>
+    <Frame name="Content" w="fill" flex="col" grow={1} p={24}>
+      <Badge variant="secondary">Active</Badge>
+    </Frame>
+  </Frame>
+</Frame>'
 ```
+
+**Resolution order for component tags:** `desh render` checks:
+1. `.desh-registry.json` first (pushed code components with local node IDs)
+2. `.desh-component-map.json` second (linked library components imported by key)
+3. If neither has it → gray placeholder frame
 
 **If pushing code components first:**
 ```bash
@@ -85,7 +123,16 @@ desh render '<Frame name="Page" w={1440} flex="col">
 **If creating layout-only frames (no component exists anywhere):**
 Use `desh render` with JSX. Read `references/render-and-scripts.md` for syntax.
 
-**CRITICAL: Always use `desh render` for creation.** Never use `eval` or `run` to create layouts, frames, or visual elements. The `render` command handles font loading, smart positioning, variable binding, and auto-layout sizing automatically — raw eval skips all of this and produces fragile, overlapping results. `eval` is ONLY for post-creation modifications (e.g., setting reactions, tweaking properties on existing nodes by ID).
+**If you need standalone library instances (not inside a render layout):**
+```bash
+# Single instance
+desh lib instance "component-key"
+
+# Multiple instances safely (batched in one plugin call)
+desh lib instance-batch "key1" "key2" "key3" --gap 100
+```
+
+**CRITICAL: Always use `desh render` for creation.** Never use `eval` or `run` to create layouts, frames, or visual elements. The `render` command handles font loading, smart positioning, variable binding, auto-layout, AND library component instancing automatically — raw eval skips all of this and produces fragile, overlapping results. `eval` is ONLY for post-creation modifications (e.g., setting reactions, tweaking properties on existing nodes by ID).
 
 ### Step 4: Verify (always)
 
@@ -159,7 +206,8 @@ desh lib components                  # Instances on current page
 desh lib components --all-pages      # Instances across entire file
 desh lib search "Button" --file "KEY"  # Search library for component
 desh lib search "check" --file "KEY" --include-icons  # Search including icons
-desh lib instance "component-key"    # Create instance
+desh lib instance "component-key"    # Create single instance
+desh lib instance-batch "k1" "k2"    # Create multiple instances (safe batching)
 desh lib import-all "KEY" [--dry-run]  # Import all from library
 desh lib swap "1:234" "NewComp"      # Swap instance
 desh lib styles                      # List styles
@@ -220,10 +268,13 @@ Injects new variant values into `cva()` calls with empty class strings (requires
 ```bash
 desh init                            # Auto-discovers library
 desh components link                 # Match code↔Figma by name
+desh components link --dry-run       # See ALL components: matched + unmatched
 desh components diff                 # See what's different
 desh components push                 # Send missing code variants to Figma
 desh components pull                 # Get missing Figma variants into code
 ```
+
+**Tip:** The component map (`.desh-component-map.json`) only stores successful matches. To see which components are **unmatched**, run `desh components link --dry-run` — it prints every code component with either its Figma match or `(no match)`.
 
 ---
 
@@ -290,24 +341,26 @@ desh remove-bg                       desh sync [--force]
 
 ## Rules
 
-1. **Instance over render, always.** If a component exists in a Figma library or can be pushed from code, instance it. Only use `desh render` for layout frames that aren't components.
-2. **Push before hand-drawing.** If a codebase component isn't in Figma, run `desh components push` first, then instance it from the registry.
-3. **Compose from library primitives.** If a component internally uses other library components (e.g., Combobox trigger IS a Button), instance those sub-parts from the library rather than recreating them with raw frames.
-4. **Explore before creating.** Run the discovery commands in Step 1 before any render/eval/run.
-5. **Use var: binding.** When variables exist, bind to them. Never hardcode colors.
-6. **Export specific nodes.** Never export full pages. Use `desh export node "ID"` or `desh verify "ID"`.
-7. **Verify after every change.** `desh verify "ID"` after creating or modifying.
-8. **Never delete user nodes** without explicit permission.
-9. **Never use eval/run to create layouts or visual elements.** `desh render` (JSX) is the ONLY creation tool. It handles font loading, smart positioning, variable binding, and auto-layout automatically. `eval` and `run` are for post-creation modifications only (e.g., setting prototype reactions, adjusting properties on existing nodes by ID). If your JSX is getting large, compose it with nested `<Frame>` elements — don't escape to eval.
-10. **No emojis.** Use `<Icon name="lucide:...">` instead.
-11. **One frame, one render.** Each `desh render` creates a new top-level frame. For multi-section layouts, nest everything in one root `<Frame>`.
-12. **appendChild before FILL.** In eval/run scripts, append a node to an auto-layout parent before setting `layoutSizingHorizontal = 'FILL'`.
-13. **Scripts stay small.** Keep `desh run` scripts under 200 lines. Break into phases.
-14. **Don't freeze Figma.** Never `findAll` on root, never walk INSTANCE children.
-15. **Shadows fail gracefully.** If shadow prop errors, use stroke + bg instead.
-16. **Link before diffing.** Run `desh components link` before `diff`/`push`/`pull`. These commands require `.desh-component-map.json` to exist.
-17. **Diff before push/pull.** Always run `desh components diff` first to understand what's different before pushing or pulling variants.
-18. **Never use text characters as icons.** Never use "✓", "✕", "▾", "▴", or any Unicode character as a substitute for an icon. Always use library icon instances (`desh lib search "check" --file KEY --include-icons`) or `<Icon name="lucide:...">` in JSX render. Figma design system libraries typically contain the full Lucide icon set — search with `--include-icons` flag since icons are hidden by default. In `desh run` scripts, use `figma.importComponentByKeyAsync(key)` then `.createInstance()` to place library icons programmatically.
+1. **Use component tags in render, never raw frames.** If a component exists in `.desh-component-map.json` or `.desh-registry.json`, use its tag name (e.g. `<Button>`, `<Badge>`) inside `desh render` JSX — it auto-instances from the library or registry. **Never recreate a linked component using raw `<Frame>` + `<Text>`.**
+2. **Read local files first.** Before writing ANY `desh render` call, read `.desh-component-map.json` to know which component tags are available. Do not search the library for components that are already in the map.
+3. **Push before hand-drawing.** If a codebase component isn't in Figma, run `desh components push` first, then use its tag in render.
+4. **Compose from library primitives.** If a component internally uses other library components (e.g., Combobox trigger IS a Button), instance those sub-parts from the library rather than recreating them with raw frames.
+5. **Explore before creating.** Run the discovery commands in Step 1 before any render/eval/run.
+6. **Use var: binding.** When variables exist, bind to them. Never hardcode colors.
+7. **Export specific nodes.** Never export full pages. Use `desh export node "ID"` or `desh verify "ID"`.
+8. **Verify after every change.** `desh verify "ID"` after creating or modifying.
+9. **Never delete user nodes** without explicit permission.
+10. **Never use eval/run to create layouts or visual elements.** `desh render` (JSX) is the ONLY creation tool. It handles font loading, smart positioning, variable binding, auto-layout, AND library component instancing automatically. `eval` and `run` are for post-creation modifications only (e.g., setting prototype reactions, adjusting properties on existing nodes by ID). If your JSX is getting large, compose it with nested `<Frame>` elements — don't escape to eval.
+11. **No emojis.** Use `<Icon name="lucide:...">` instead.
+12. **One frame, one render.** Each `desh render` creates a new top-level frame. For multi-section layouts, nest everything in one root `<Frame>`.
+13. **Never parallelize `desh lib instance` calls.** The Figma plugin crashes under rapid-fire library imports. Use `desh lib instance-batch` for multiple instances, or use component tags in `desh render` (which handles yielding automatically).
+14. **appendChild before FILL.** In eval/run scripts, append a node to an auto-layout parent before setting `layoutSizingHorizontal = 'FILL'`.
+15. **Scripts stay small.** Keep `desh run` scripts under 200 lines. Break into phases.
+16. **Don't freeze Figma.** Never `findAll` on root, never walk INSTANCE children.
+17. **Shadows fail gracefully.** If shadow prop errors, use stroke + bg instead.
+18. **Link before diffing.** Run `desh components link` before `diff`/`push`/`pull`. These commands require `.desh-component-map.json` to exist.
+19. **Diff before push/pull.** Always run `desh components diff` first to understand what's different before pushing or pulling variants.
+20. **Never use text characters as icons.** Never use "✓", "✕", "▾", "▴", or any Unicode character as a substitute for an icon. Always use library icon instances (`desh lib search "check" --file KEY --include-icons`) or `<Icon name="lucide:...">` in JSX render. Figma design system libraries typically contain the full Lucide icon set — search with `--include-icons` flag since icons are hidden by default. In `desh run` scripts, use `figma.importComponentByKeyAsync(key)` then `.createInstance()` to place library icons programmatically.
 
 ---
 

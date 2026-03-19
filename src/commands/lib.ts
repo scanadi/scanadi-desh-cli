@@ -464,6 +464,84 @@ export function registerLibCommands(program: Command): void {
       }
     });
 
+  // ---- lib instance-batch --------------------------------------------------
+  lib
+    .command('instance-batch <keys...>')
+    .description('Create instances of multiple library components in a single call (safe batching)')
+    .option('-x <number>', 'Starting X position')
+    .option('-y <number>', 'Y position')
+    .option('--gap <number>', 'Horizontal gap between instances (default: 100)', '100')
+    .action(async (keys: string[], opts: { x?: string; y?: string; gap?: string }) => {
+      try {
+        const gap = parseInt(opts.gap || '100', 10);
+        status(`Creating ${keys.length} instance(s)...`);
+        const raw = await runFigmaCode<string>(`(async () => {
+  const keys = ${JSON.stringify(keys)};
+  const gap = ${gap};
+
+  // Smart positioning: find rightmost edge of existing content
+  let x = ${opts.x ? parseInt(opts.x, 10) : 'undefined'};
+  let y = ${opts.y ? parseInt(opts.y, 10) : 'undefined'};
+  if (x === undefined || y === undefined) {
+    let maxRight = 0;
+    for (const n of figma.currentPage.children) {
+      const right = n.x + n.width;
+      if (right > maxRight) maxRight = right;
+    }
+    if (x === undefined) x = maxRight > 0 ? maxRight + 100 : 100;
+    if (y === undefined) y = 100;
+  }
+
+  const results = [];
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      // Yield between imports to prevent UI freeze
+      if (i > 0) await new Promise(r => setTimeout(r, 0));
+      const comp = await figma.importComponentByKeyAsync(keys[i]);
+      if (comp) {
+        const inst = comp.createInstance();
+        inst.x = x; inst.y = y;
+        x += inst.width + gap;
+        results.push({ key: keys[i], name: inst.name, id: inst.id, ok: true });
+      } else {
+        results.push({ key: keys[i], ok: false, error: 'null result' });
+      }
+    } catch (e) {
+      results.push({ key: keys[i], ok: false, error: String(e) });
+    }
+  }
+
+  // Select all created instances
+  const created = results.filter(r => r.ok).map(r => figma.getNodeById(r.id)).filter(Boolean);
+  if (created.length > 0) {
+    figma.currentPage.selection = created;
+    figma.viewport.scrollAndZoomIntoView(created);
+  }
+
+  return JSON.stringify(results);
+})()`, 60_000 + keys.length * 5_000); // Scale timeout with batch size
+
+        progressDone();
+        const results = JSON.parse(raw) as Array<{ key: string; name?: string; id?: string; ok: boolean; error?: string }>;
+        const succeeded = results.filter(r => r.ok);
+        const failed = results.filter(r => !r.ok);
+
+        for (const r of succeeded) {
+          success(`Created "${r.name}" — ID: ${r.id}`);
+        }
+        for (const r of failed) {
+          error(`Failed to instance ${r.key}: ${r.error}`);
+        }
+
+        if (succeeded.length > 0) {
+          info(`${succeeded.length}/${keys.length} instance(s) created`);
+        }
+      } catch (err) {
+        error(String((err as Error).message));
+        process.exit(1);
+      }
+    });
+
   // ---- lib swap -----------------------------------------------------------
   lib
     .command('swap <nodeId> <newComponent>')

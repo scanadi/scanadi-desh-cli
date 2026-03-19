@@ -53,6 +53,11 @@ export async function startBridgeServer(
   let lastPollTime = 0;
   const PLUGIN_ALIVE_THRESHOLD = 30_000; // 30s — must exceed long-poll hold time (25s)
 
+  // Throttle: minimum delay between dispatching consecutive queued requests
+  // Prevents rapid-fire library imports from crashing the Figma plugin
+  let lastDispatchTime = 0;
+  const MIN_DISPATCH_INTERVAL_MS = 500;
+
   function isPluginConnected(): boolean {
     return Date.now() - lastPollTime < PLUGIN_ALIVE_THRESHOLD;
   }
@@ -179,12 +184,21 @@ export async function startBridgeServer(
       timer,
     });
 
-    // If plugin is already long-polling, send immediately
+    // If plugin is already long-polling, send (with throttle)
     if (pendingPollRes) {
-      const pollRes = pendingPollRes;
-      pendingPollRes = null;
-      pollRes.writeHead(200, { 'Content-Type': 'application/json' });
-      pollRes.end(JSON.stringify(request));
+      const now = Date.now();
+      const elapsed = now - lastDispatchTime;
+
+      if (elapsed >= MIN_DISPATCH_INTERVAL_MS) {
+        const pollRes = pendingPollRes;
+        pendingPollRes = null;
+        lastDispatchTime = Date.now();
+        pollRes.writeHead(200, { 'Content-Type': 'application/json' });
+        pollRes.end(JSON.stringify(request));
+      } else {
+        // Too soon — queue it, throttled handlePoll will dispatch
+        execQueue.push(request);
+      }
     } else {
       execQueue.push(request);
     }
@@ -194,11 +208,34 @@ export async function startBridgeServer(
   function handlePoll(res: ServerResponse): void {
     lastPollTime = Date.now();
 
-    // If there's a queued request, return it immediately
+    // If there's a queued request, dispatch it (with throttle for consecutive requests)
     if (execQueue.length > 0) {
-      const request = execQueue.shift()!;
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(request));
+      const now = Date.now();
+      const elapsed = now - lastDispatchTime;
+
+      if (elapsed >= MIN_DISPATCH_INTERVAL_MS) {
+        // Enough time has passed — dispatch immediately
+        const request = execQueue.shift()!;
+        lastDispatchTime = Date.now();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(request));
+        return;
+      }
+
+      // Too soon — delay dispatch to prevent rapid-fire plugin calls
+      const delay = MIN_DISPATCH_INTERVAL_MS - elapsed;
+      setTimeout(() => {
+        if (execQueue.length > 0) {
+          const request = execQueue.shift()!;
+          lastDispatchTime = Date.now();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(request));
+        } else {
+          // Queue was drained while waiting — return empty poll
+          res.writeHead(204);
+          res.end();
+        }
+      }, delay);
       return;
     }
 
