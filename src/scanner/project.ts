@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { join, relative } from 'path';
 
 export interface ProjectInfo {
@@ -12,6 +12,17 @@ export interface ProjectInfo {
 const MONOREPO_MARKERS = ['pnpm-workspace.yaml', 'turbo.json', 'nx.json', 'lerna.json'];
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '.next', '.nuxt', 'build', 'out', '.reference']);
 
+const TOKEN_PATTERN = /@theme\b|:root\s*\{[^}]*--[a-z]|\.dark\s*\{[^}]*--[a-z]/s;
+
+function hasTokenContent(filePath: string): boolean {
+  try {
+    const head = readFileSync(filePath, { encoding: 'utf8', flag: 'r' }).slice(0, 1024);
+    return TOKEN_PATTERN.test(head);
+  } catch {
+    return false;
+  }
+}
+
 function findGlobalsCSS(dir: string, maxDepth = 4, depth = 0): string[] {
   if (depth > maxDepth) return [];
   const results: string[] = [];
@@ -22,7 +33,7 @@ function findGlobalsCSS(dir: string, maxDepth = 4, depth = 0): string[] {
       try {
         if (statSync(full).isDirectory()) {
           results.push(...findGlobalsCSS(full, maxDepth, depth + 1));
-        } else if (entry === 'globals.css') {
+        } else if (entry.endsWith('.css') && hasTokenContent(full)) {
           results.push(full);
         }
       } catch {}

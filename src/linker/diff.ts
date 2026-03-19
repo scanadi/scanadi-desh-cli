@@ -40,12 +40,13 @@ export function diffComponent(input: DiffInput): ComponentDiffResult {
       continue;
     }
 
-    const codeSet = new Set(codeValues);
-    const figmaSet = new Set(figmaValues);
+    // Case-insensitive comparison — Figma uses "Default", code uses "default"
+    const codeLowerSet = new Set(codeValues.map(v => v.toLowerCase()));
+    const figmaLowerSet = new Set(figmaValues.map(v => v.toLowerCase()));
 
-    const matched = codeValues.filter(v => figmaSet.has(v));
-    const codeOnly = codeValues.filter(v => !figmaSet.has(v));
-    const figmaOnly = figmaValues.filter(v => !codeSet.has(v));
+    const matched = codeValues.filter(v => figmaLowerSet.has(v.toLowerCase()));
+    const codeOnly = codeValues.filter(v => !figmaLowerSet.has(v.toLowerCase()));
+    const figmaOnly = figmaValues.filter(v => !codeLowerSet.has(v.toLowerCase()));
 
     axes[axis] = { matched, codeOnly, figmaOnly };
 

@@ -6,6 +6,7 @@ import { success, error, info, warn } from '../utils/output.js';
 import { isSkillInstalled } from '../utils/skill-setup.js';
 import { runSkillSetup } from './setup.js';
 import { runFigmaCode } from '../utils/figma-eval.js';
+import { getComponentFileKey, getFileInfo } from '../api/figma-rest.js';
 import * as readline from 'readline';
 
 function ask(question: string): Promise<string> {
@@ -49,46 +50,47 @@ export function registerInitCommand(program: Command): void {
           info(`Found components: ${project.suggestedComponents.join(', ')}`);
         }
 
-        // Try to discover linked library (requires plugin connection)
+        // Try to discover linked library (requires plugin + API token)
         let library: { fileKey: string; name: string } | undefined;
         try {
+          // Step 1: Find a remote component instance via the plugin
           const raw = await runFigmaCode<string>(`(async () => {
-  const found = new Map();
-  for (const child of figma.currentPage.children) {
-    if (found.size > 0) break;
+  let componentKey = null;
+  for (const page of figma.root.children) {
+    if (componentKey) break;
+    try {
+      await page.loadAsync();
+    } catch(e) { continue; }
     function walk(n, depth) {
-      if (depth > 3 || found.size > 0) return;
+      if (depth > 4 || componentKey) return;
       if (n.type === 'INSTANCE') {
         try {
           const mc = n.mainComponent;
-          if (mc && mc.remote) {
-            found.set('key', mc.key);
-            found.set('remote', true);
-          }
+          if (mc && mc.remote) { componentKey = mc.key; return; }
         } catch(e) {}
       }
       if ('children' in n && n.type !== 'INSTANCE') {
-        for (const c of n.children) walk(c, depth + 1);
+        for (const c of n.children) { walk(c, depth + 1); if (componentKey) return; }
       }
     }
-    walk(child, 0);
+    for (const child of page.children) { walk(child, 0); if (componentKey) break; }
   }
-  try {
-    const libs = await figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync();
-    if (libs.length > 0) {
-      return JSON.stringify({ libraryName: libs[0].libraryName, collections: libs.map(l => l.libraryName) });
-    }
-  } catch(e) {}
-  return JSON.stringify(null);
-})()`, 15_000);
+  return JSON.stringify(componentKey);
+})()`, 20_000);
 
-          const result = raw ? JSON.parse(raw) : null;
-          if (result && result.libraryName) {
-            info(`Detected linked library: ${result.libraryName}`);
-            info('Run \`desh lib set-library <fileKey>\` to enable component linking');
+          const componentKey = raw ? JSON.parse(raw) : null;
+          if (componentKey) {
+            // Step 2: Resolve component key → file key via REST API
+            const resolved = await getComponentFileKey(componentKey);
+            if (resolved) {
+              // Step 3: Get the file name
+              const fileInfo = await getFileInfo(resolved.fileKey);
+              library = { fileKey: resolved.fileKey, name: fileInfo.name };
+              info(`Detected linked library: ${fileInfo.name}`);
+            }
           }
         } catch {
-          // Plugin not connected or discovery failed — skip silently
+          // Plugin not connected, no API token, or discovery failed — skip silently
         }
 
         const config: Record<string, unknown> = {};

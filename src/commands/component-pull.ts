@@ -43,16 +43,18 @@ export function registerComponentPullCommand(parent: Command): void {
         const components = await getFileComponents(fileKey);
         progressDone();
 
-        // Build Figma variant map
-        const figmaVariantsBySetName = new Map<string, Record<string, Set<string>>>();
+        // Build Figma variant map by containing frame node ID
+        const figmaVariantsByNodeId = new Map<string, Record<string, Set<string>>>();
         for (const comp of components) {
-          if (!comp.componentSetName) continue;
-          if (!figmaVariantsBySetName.has(comp.componentSetName)) {
-            figmaVariantsBySetName.set(comp.componentSetName, {});
+          const frameId = comp.containingFrameNodeId;
+          if (!frameId) continue;
+          if (!figmaVariantsByNodeId.has(frameId)) {
+            figmaVariantsByNodeId.set(frameId, {});
           }
-          const axisMap = figmaVariantsBySetName.get(comp.componentSetName)!;
+          const axisMap = figmaVariantsByNodeId.get(frameId)!;
           for (const part of comp.name.split(',').map(s => s.trim())) {
-            const [axis, value] = part.split('=').map(s => s.trim());
+            const [rawAxis, value] = part.split('=').map(s => s.trim());
+            const axis = rawAxis?.toLowerCase();
             if (axis && value) {
               if (!axisMap[axis]) axisMap[axis] = new Set();
               axisMap[axis].add(value);
@@ -68,7 +70,7 @@ export function registerComponentPullCommand(parent: Command): void {
             continue;
           }
 
-          const figmaAxes = figmaVariantsBySetName.get(comp.figmaName);
+          const figmaAxes = comp.figmaNodeId ? figmaVariantsByNodeId.get(comp.figmaNodeId) : undefined;
           const figmaVariants: Record<string, string[]> = {};
           if (figmaAxes) {
             for (const [axis, values] of Object.entries(figmaAxes)) {

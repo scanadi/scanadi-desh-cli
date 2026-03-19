@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { join } from 'path';
+import { join, relative } from 'path';
 import { loadConfig, requireConfig } from '../config.js';
 import { loadComponentMap, saveComponentMap, type ComponentMap } from '../linker/component-map.js';
 import { findBestMatch } from '../linker/match.js';
@@ -71,11 +71,15 @@ export function registerComponentLinkCommands(parent: Command): void {
         progressDone();
 
         // Build a list of top-level Figma components (sets + standalone)
+        // Filter out deeply nested components (e.g. "DropdownMenu / Item / Label")
+        // — these are sub-components, not top-level design system components
         const figmaEntries = [
-          ...componentSets.map(cs => ({ name: cs.name, key: cs.key, type: 'COMPONENT_SET' as const })),
+          ...componentSets
+            .filter(cs => (cs.name.match(/\//g) || []).length <= 1)
+            .map(cs => ({ name: cs.name, key: cs.key, type: 'COMPONENT_SET' as const, nodeId: cs.nodeId })),
           ...components
-            .filter(c => !c.componentSetName) // exclude variants inside sets
-            .map(c => ({ name: c.name, key: c.key, type: 'COMPONENT' as const })),
+            .filter(c => !c.componentSetName && (c.name.match(/\//g) || []).length <= 1)
+            .map(c => ({ name: c.name, key: c.key, type: 'COMPONENT' as const, nodeId: undefined })),
         ];
 
         // 3. Match
@@ -106,10 +110,11 @@ export function registerComponentLinkCommands(parent: Command): void {
               continue;
             }
             map.components[cc.name] = {
-              codeFile: cc.file,
+              codeFile: relative(config.configDir, cc.file),
               figmaKey: figmaEntry.key,
               figmaName: figmaEntry.name,
               figmaType: 'type' in figmaEntry ? figmaEntry.type : 'COMPONENT',
+              figmaNodeId: 'nodeId' in figmaEntry ? figmaEntry.nodeId : undefined,
               codeVariants: cc.variants,
               figmaVariants: {}, // Will be populated on first diff
               subComponents: cc.subComponents.length > 0 ? cc.subComponents : undefined,
@@ -121,15 +126,17 @@ export function registerComponentLinkCommands(parent: Command): void {
           // Auto-match by name
           const match = findBestMatch(cc.name, figmaEntries);
           if (match) {
-            const figmaType = figmaEntries.find(f => f.key === match.key)?.type || 'COMPONENT';
+            const figmaEntry = figmaEntries.find(f => f.key === match.key);
+            const figmaType = figmaEntry?.type || 'COMPONENT';
             if (opts?.dryRun) {
               console.log(`  ${cc.name} → ${match.name} (${figmaType})`);
             } else {
               map.components[cc.name] = {
-                codeFile: cc.file,
+                codeFile: relative(config.configDir, cc.file),
                 figmaKey: match.key,
                 figmaName: match.name,
                 figmaType: figmaType,
+                figmaNodeId: figmaEntry?.nodeId,
                 codeVariants: cc.variants,
                 figmaVariants: {},
                 subComponents: cc.subComponents.length > 0 ? cc.subComponents : undefined,

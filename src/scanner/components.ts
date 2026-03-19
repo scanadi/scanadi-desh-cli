@@ -104,7 +104,7 @@ export function scanComponentFile(filePath: string, source: 'primitives' | 'comp
               valuesObj.getProperties().forEach(vp => {
                 if (vp.getKind() !== SyntaxKind.PropertyAssignment) return;
                 const vpa = vp.asKindOrThrow(SyntaxKind.PropertyAssignment);
-                const key = vpa.getName();
+                const key = vpa.getName().replace(/^["']|["']$/g, '');
                 const value = vpa.getInitializer()?.getText().replace(/['"]/g, '') ?? '';
                 variants[variantName].push(key);
                 variantClasses[variantName][key] = value;

@@ -6,6 +6,7 @@ export interface LinkedComponent {
   figmaKey: string;
   figmaName: string;
   figmaType: 'COMPONENT' | 'COMPONENT_SET';
+  figmaNodeId?: string;
   codeVariants: Record<string, string[]>;
   figmaVariants: Record<string, string[]>;
   subComponents?: string[];

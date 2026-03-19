@@ -4,7 +4,7 @@ import { requireConfig } from '../config.js';
 import { loadComponentMap, saveComponentMap } from '../linker/component-map.js';
 import { diffComponent, type ComponentDiffResult } from '../linker/diff.js';
 import { scanComponentFile } from '../scanner/components.js';
-import { getFileComponents, getFileComponentSets } from '../api/figma-rest.js';
+import { getNodeChildren } from '../api/figma-rest.js';
 import { success, error, info, status, progressDone } from '../utils/output.js';
 
 function formatDiff(name: string, diff: ComponentDiffResult): string {
@@ -75,30 +75,33 @@ export function registerComponentDiffCommand(parent: Command): void {
         }
         progressDone();
 
-        // Fetch Figma variant info from REST API
+        // Fetch Figma variant info by querying component set nodes directly
+        const nodeIds = entries
+          .filter(([, comp]) => comp.figmaNodeId && comp.figmaType === 'COMPONENT_SET')
+          .map(([, comp]) => comp.figmaNodeId!);
+
         status('Fetching Figma component data...');
-        const [components] = await Promise.all([
-          getFileComponents(fileKey),
-        ]);
+        const nodeChildren = nodeIds.length > 0 ? await getNodeChildren(fileKey, nodeIds) : {};
         progressDone();
 
-        // Build Figma variant map: for each component set, extract variant values
-        // Components in a set are named like "variant=default, size=sm"
-        const figmaVariantsBySetName = new Map<string, Record<string, Set<string>>>();
-        for (const comp of components) {
-          if (!comp.componentSetName) continue;
-          if (!figmaVariantsBySetName.has(comp.componentSetName)) {
-            figmaVariantsBySetName.set(comp.componentSetName, {});
-          }
-          const axisMap = figmaVariantsBySetName.get(comp.componentSetName)!;
-          // Parse "variant=default, size=sm" format
-          for (const part of comp.name.split(',').map(s => s.trim())) {
-            const [axis, value] = part.split('=').map(s => s.trim());
-            if (axis && value) {
-              if (!axisMap[axis]) axisMap[axis] = new Set();
-              axisMap[axis].add(value);
+        // Parse variant axes from node children names
+        function parseVariantAxes(children: Array<{ name: string }>): Record<string, string[]> {
+          const axes: Record<string, Set<string>> = {};
+          for (const child of children) {
+            for (const part of child.name.split(',').map(s => s.trim())) {
+              const [rawAxis, value] = part.split('=').map(s => s.trim());
+              const axis = rawAxis?.toLowerCase();
+              if (axis && value) {
+                if (!axes[axis]) axes[axis] = new Set();
+                axes[axis].add(value);
+              }
             }
           }
+          const result: Record<string, string[]> = {};
+          for (const [axis, values] of Object.entries(axes)) {
+            result[axis] = Array.from(values);
+          }
+          return result;
         }
 
         // Run diffs
@@ -107,14 +110,9 @@ export function registerComponentDiffCommand(parent: Command): void {
         let diffCount = 0;
 
         for (const [compName, comp] of entries) {
-          // Find Figma variants for this component
-          const figmaAxes = figmaVariantsBySetName.get(comp.figmaName);
-          const figmaVariants: Record<string, string[]> = {};
-          if (figmaAxes) {
-            for (const [axis, values] of Object.entries(figmaAxes)) {
-              figmaVariants[axis] = Array.from(values);
-            }
-          }
+          // Get Figma variants from the node children query
+          const children = comp.figmaNodeId ? nodeChildren[comp.figmaNodeId] : undefined;
+          const figmaVariants = children ? parseVariantAxes(children) : {};
 
           // Update stored Figma variants
           comp.figmaVariants = figmaVariants;

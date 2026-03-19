@@ -1,7 +1,19 @@
 import { writeFileSync } from 'fs';
 import type { Command } from 'commander';
+import { converter } from 'culori';
 import { runFigmaCode } from '../utils/figma-eval.js';
 import { error, success } from '../utils/output.js';
+
+const toOklch = converter('oklch');
+
+function rgbToOklch(r: number, g: number, b: number): string {
+  const c = toOklch({ mode: 'rgb', r, g, b });
+  if (!c) return `oklch(0 0 0)`;
+  const L = +c.l.toFixed(4);
+  const C = +c.c.toFixed(4);
+  const H = +(c.h ?? 0).toFixed(2);
+  return `oklch(${L} ${C} ${H})`;
+}
 
 export function registerExportCommands(program: Command): void {
   // ============ export subcommand group ============
@@ -15,21 +27,34 @@ export function registerExportCommands(program: Command): void {
     .action(async (opts: { output?: string }) => {
       const code = `(async () => {
 const vars = await figma.variables.getLocalVariablesAsync();
-const lines = vars.map(v => {
+return vars.map(v => {
   const val = Object.values(v.valuesByMode)[0];
-  if (v.resolvedType === 'COLOR') {
-    const hex = '#' + [val.r, val.g, val.b].map(n => Math.round(n * 255).toString(16).padStart(2, '0')).join('');
-    return '  --' + v.name.replace(/\\//g, '-') + ': ' + hex + ';';
-  }
-  return '  --' + v.name.replace(/\\//g, '-') + ': ' + val + (v.resolvedType === 'FLOAT' ? 'px' : '') + ';';
-}).join('\\n');
-return ':root {\\n' + lines + '\\n}';
+  return { name: v.name.replace(/\\//g, '-'), type: v.resolvedType, val, desc: v.description || '' };
+});
 })()`;
 
       try {
-        const result = await runFigmaCode<string | undefined>(code, 60_000);
+        const vars = await runFigmaCode<Array<{ name: string; type: string; val: unknown; desc: string }>>(code, 60_000);
+        if (!Array.isArray(vars)) {
+          error('Unexpected response from Figma');
+          process.exit(1);
+        }
 
-        const output = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+        const lines = vars.map(v => {
+          if (v.type === 'COLOR') {
+            // Use original CSS value from description if available (avoids OKLCH→RGB→OKLCH drift)
+            if (v.desc.startsWith('desh:')) {
+              const lightCss = v.desc.slice(5).split('|')[0];
+              return `  --${v.name}: ${lightCss};`;
+            }
+            const c = v.val as { r: number; g: number; b: number };
+            return `  --${v.name}: ${rgbToOklch(c.r, c.g, c.b)};`;
+          }
+          const suffix = v.type === 'FLOAT' ? 'px' : '';
+          return `  --${v.name}: ${v.val}${suffix};`;
+        });
+
+        const output = `:root {\n${lines.join('\n')}\n}`;
         if (opts.output) {
           writeFileSync(opts.output, output);
           success(`CSS variables written to ${opts.output}`);

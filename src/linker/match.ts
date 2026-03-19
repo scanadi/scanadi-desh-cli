@@ -21,9 +21,15 @@ function pascalToSpaced(name: string): string {
   return name.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
 }
 
+/** Pick the shortest-named entry (most specific match). */
+function shortest(entries: FigmaComponentEntry[]): FigmaComponentEntry {
+  return entries.reduce((a, b) => a.name.length <= b.name.length ? a : b);
+}
+
 /**
  * Find the best matching Figma component for a code component name.
  * Tries: exact (case-insensitive), normalized, PascalCase→spaced.
+ * When multiple match in a pass, prefers the shortest name.
  */
 export function findBestMatch(
   codeName: string,
@@ -33,20 +39,19 @@ export function findBestMatch(
   const codeSpaced = pascalToSpaced(codeName).replace(/\s+/g, '');
 
   // Pass 1: exact name match (case-insensitive)
-  for (const fc of figmaComponents) {
-    if (fc.name.toLowerCase() === codeName.toLowerCase()) return fc;
-  }
+  const exact = figmaComponents.filter(fc => fc.name.toLowerCase() === codeName.toLowerCase());
+  if (exact.length > 0) return shortest(exact);
 
-  // Pass 2: normalized match (strips prefixes, spaces)
-  for (const fc of figmaComponents) {
-    if (normalizeComponentName(fc.name) === codeNorm) return fc;
-  }
+  // Pass 2: normalized match (strips prefixes, spaces) — prefer shortest name
+  const normalized = figmaComponents.filter(fc => normalizeComponentName(fc.name) === codeNorm);
+  if (normalized.length > 0) return shortest(normalized);
 
   // Pass 3: PascalCase code name → spaced Figma name
-  for (const fc of figmaComponents) {
+  const spaced = figmaComponents.filter(fc => {
     const figmaNorm = fc.name.toLowerCase().replace(/\s+/g, '');
-    if (figmaNorm === codeSpaced) return fc;
-  }
+    return figmaNorm === codeSpaced;
+  });
+  if (spaced.length > 0) return shortest(spaced);
 
   return null;
 }

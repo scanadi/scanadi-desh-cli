@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { Command } from 'commander';
 
 // Auto-load .env.local then .env from cwd
@@ -60,7 +61,7 @@ const program = new Command();
 program
   .name('desh')
   .description('Design Shell — control Figma Desktop from the command line')
-  .version('0.1.0');
+  .version(JSON.parse(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../package.json'), 'utf8')).version);
 
 // Connection & setup
 registerSetupCommand(program);

@@ -1,6 +1,6 @@
 {
   "name": "design-shell",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Design Shell — CLI that bridges your React/Tailwind codebase to Figma Desktop",
   "type": "module",
   "bin": {

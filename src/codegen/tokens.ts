@@ -5,6 +5,8 @@ interface ColorVar {
   name: string;
   light: RgbColor;
   dark: RgbColor | null;
+  lightCss: string;
+  darkCss: string | null;
 }
 
 interface FloatVar {
@@ -61,6 +63,8 @@ export function generateTokenSyncJs(tokens: TokenMap): string {
       name: prop.replace(/^--/, ''),
       light: lightRgb,
       dark: darkRgb,
+      lightCss: value,
+      darkCss: darkValue ?? null,
     });
   }
 
@@ -115,9 +119,9 @@ export function generateTokenSyncJs(tokens: TokenMap): string {
         if (!figVar) {
           figVar = figma.variables.createVariable(v.name, semanticCol, 'COLOR');
         }
-        // Figma COLOR variables only accept {r, g, b} — alpha is not supported.
-        // When a color has alpha < 1, we store the opaque RGB and log a warning.
-        // To apply alpha, use paint opacity when binding: { type: 'SOLID', color: {r,g,b}, opacity: a }
+        // Store original CSS values in description for lossless export roundtrip
+        const desc = v.darkCss ? 'desh:' + v.lightCss + '|' + v.darkCss : 'desh:' + v.lightCss;
+        figVar.description = desc;
         figVar.setValueForMode(lightModeId, { r: v.light.r, g: v.light.g, b: v.light.b });
         if (v.light.a !== undefined && v.light.a < 1) {
           alphaWarnings.push(v.name + ' (light: alpha=' + v.light.a + ')');
