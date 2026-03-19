@@ -7,3 +7,4 @@ screenshot.png
 dist/
 .reference/
 .desh-registry.json
+desh.config.json
