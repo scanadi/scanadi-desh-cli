@@ -9,6 +9,7 @@ import { join } from 'path';
 import { readdirSync, statSync } from 'fs';
 import { registerComponentLinkCommands } from './component-link.js';
 import { registerComponentDiffCommand } from './component-diff.js';
+import { registerComponentPushCommand } from './component-push.js';
 
 function collectFiles(dir: string, files: string[] = []): string[] {
   try {
@@ -212,4 +213,5 @@ export function registerComponentCommands(program: Command): void {
 
   registerComponentLinkCommands(comp);
   registerComponentDiffCommand(comp);
+  registerComponentPushCommand(comp);
 }
