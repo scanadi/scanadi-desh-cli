@@ -6,6 +6,7 @@ export interface DeshConfig {
   primitives?: string;
   components: string[];
   libraryFileKey?: string;
+  library?: { fileKey: string; name: string };
   configDir: string;
 }
 
@@ -14,6 +15,7 @@ interface RawConfig {
   primitives?: string;
   components?: string | string[];
   libraryFileKey?: string;
+  library?: { fileKey: string; name: string };
 }
 
 export function parseConfig(raw: RawConfig, configDir = '.'): DeshConfig {
@@ -23,7 +25,7 @@ export function parseConfig(raw: RawConfig, configDir = '.'): DeshConfig {
   const components = raw.components
     ? Array.isArray(raw.components) ? raw.components : [raw.components]
     : [];
-  return { tokens, primitives: raw.primitives, components, libraryFileKey: raw.libraryFileKey, configDir };
+  return { tokens, primitives: raw.primitives, components, libraryFileKey: raw.libraryFileKey, library: raw.library, configDir };
 }
 
 export function loadConfig(startDir = process.cwd()): DeshConfig | null {
