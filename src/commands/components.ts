@@ -7,6 +7,7 @@ import { runFigmaCode } from '../utils/figma-eval.js';
 import { loadRegistry, saveRegistry, type ComponentRegistry } from '../registry.js';
 import { join } from 'path';
 import { readdirSync, statSync } from 'fs';
+import { registerComponentLinkCommands } from './component-link.js';
 
 function collectFiles(dir: string, files: string[] = []): string[] {
   try {
@@ -109,7 +110,7 @@ export function registerComponentCommands(program: Command): void {
     });
 
   comp
-    .command('push')
+    .command('push-all')
     .alias('sync')
     .description('Push project components to Figma as component sets')
     .action(async () => {
@@ -207,4 +208,6 @@ export function registerComponentCommands(program: Command): void {
         process.exit(1);
       }
     });
+
+  registerComponentLinkCommands(comp);
 }
