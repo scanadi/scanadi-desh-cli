@@ -4,7 +4,7 @@
   "api": "1.0.0",
   "main": "code.js",
   "ui": "ui.html",
-  "editorType": ["figma"],
+  "editorType": ["figma", "dev"],
   "networkAccess": {
     "allowedDomains": ["http://localhost:9001"],
     "reasoning": "Connects to local desh bridge server for CLI communication"
