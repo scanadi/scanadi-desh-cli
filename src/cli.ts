@@ -53,6 +53,7 @@ import { registerVarCommands, registerBindCommands } from './commands/var.js';
 import { registerRemoveBgCommand } from './commands/removebg.js';
 import { registerPagesCommands } from './commands/pages.js';
 import { registerShortcutCommands } from './commands/shortcuts.js';
+import { registerSetupCommand } from './commands/setup.js';
 
 const program = new Command();
 
@@ -62,6 +63,7 @@ program
   .version('0.1.0');
 
 // Connection & setup
+registerSetupCommand(program);
 registerConnectCommand(program);
 registerInitCommand(program);
 

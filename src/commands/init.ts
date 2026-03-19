@@ -3,6 +3,8 @@ import { writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { scanProject } from '../scanner/project.js';
 import { success, error, info, warn } from '../utils/output.js';
+import { isSkillInstalled } from '../utils/skill-setup.js';
+import { runSkillSetup } from './setup.js';
 import * as readline from 'readline';
 
 function ask(question: string): Promise<string> {
@@ -17,6 +19,12 @@ export function registerInitCommand(program: Command): void {
     .option('-y, --yes', 'Skip prompts, accept defaults')
     .action(async (opts: { yes?: boolean }) => {
       try {
+        // Mandatory: ensure Claude Code skill is installed
+        if (!isSkillInstalled()) {
+          await runSkillSetup(opts);
+          console.log('');
+        }
+
         const configPath = join(process.cwd(), 'desh.config.json');
         if (existsSync(configPath) && !opts.yes) {
           warn('desh.config.json already exists');
