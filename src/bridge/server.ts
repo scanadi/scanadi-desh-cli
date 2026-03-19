@@ -110,6 +110,14 @@ export async function startBridgeServer(
       return;
     }
 
+    // Plugin heartbeat — keeps connection alive during long executions
+    if (req.method === 'POST' && req.url === '/heartbeat') {
+      lastPollTime = Date.now();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
     // Plugin sends back execution result
     if (req.method === 'POST' && req.url === '/result') {
       let body = '';

@@ -208,6 +208,21 @@
         });
     }
 
+    // Keepalive — independently pings the bridge during active execution
+    // so the server knows the plugin is alive even if poll can't complete
+    var keepaliveTimer = null;
+    function startKeepalive() {
+      if (keepaliveTimer) return;
+      keepaliveTimer = setInterval(function () {
+        if (Object.keys(activeRequests).length > 0) {
+          fetch(BASE + '/heartbeat', { method: 'POST' }).catch(function () {});
+        } else {
+          clearInterval(keepaliveTimer);
+          keepaliveTimer = null;
+        }
+      }, 10000);
+    }
+
     // Receive messages from sandbox
     window.onmessage = function (event) {
       var msg = event.data && event.data.pluginMessage;
@@ -215,6 +230,13 @@
 
       if (msg.type === 'exec-start') {
         addEntry(msg.id, msg.code || '');
+        startKeepalive();
+        return;
+      }
+
+      // Heartbeat from sandbox — relay to bridge to keep connection alive
+      if (msg.type === 'heartbeat') {
+        fetch(BASE + '/heartbeat', { method: 'POST' }).catch(function () {});
         return;
       }
 

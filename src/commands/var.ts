@@ -131,6 +131,7 @@ export function registerVarCommands(program: Command): void {
       nameLabel.fills = [{ type: 'SOLID', color: { r: 0.2, g: 0.2, b: 0.2 } }];
       row.appendChild(nameLabel);
       created++;
+      await __deshYield(3);
     }
 
     x += colFrame.width + 24;

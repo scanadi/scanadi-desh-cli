@@ -399,18 +399,24 @@ function generateCode(props: ParsedProps, children: ParsedElement[], registry?: 
   let childCounter = 0;
 
   const genChild = (items: ParsedElement[], parentVar: string, parentFlex: string): string => {
-    return items.map(item => {
+    return items.map((item, i) => {
       const idx = childCounter++;
+      let code: string;
       switch (item._type) {
-        case 'text': return genText(item, idx, parentVar);
-        case 'frame': return genFrame(item, idx, parentVar, parentFlex);
-        case 'rect': return genRect(item, idx, parentVar);
-        case 'image': return genImage(item, idx, parentVar);
-        case 'icon': return genIcon(item, idx, parentVar);
-        case 'slot': return genSlot(item, idx, parentVar);
-        case 'instance': return genInstance(item, idx, parentVar, parentFlex);
-        default: return '';
+        case 'text': code = genText(item, idx, parentVar); break;
+        case 'frame': code = genFrame(item, idx, parentVar, parentFlex); break;
+        case 'rect': code = genRect(item, idx, parentVar); break;
+        case 'image': code = genImage(item, idx, parentVar); break;
+        case 'icon': code = genIcon(item, idx, parentVar); break;
+        case 'slot': code = genSlot(item, idx, parentVar); break;
+        case 'instance': code = genInstance(item, idx, parentVar, parentFlex); break;
+        default: code = '';
       }
+      // Yield every 3 elements to release Figma's main thread
+      if ((i + 1) % 3 === 0 && i < items.length - 1) {
+        code += '\n        await __deshYield();';
+      }
+      return code;
     }).join('\n');
   };
 
@@ -826,6 +832,7 @@ function generateCode(props: ParsedProps, children: ParsedElement[], registry?: 
         ${maxW ? `frame.maxWidth = ${maxW};` : ''}
         ${minH ? `frame.minHeight = ${minH};` : ''}
         ${maxH ? `frame.maxHeight = ${maxH};` : ''}
+        await __deshYield();
 
         ${childCode}
 

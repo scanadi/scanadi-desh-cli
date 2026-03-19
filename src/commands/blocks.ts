@@ -106,6 +106,7 @@ function getDashboard01Code(): string {
   sidebar.strokeWeight = 1;
   root.appendChild(sidebar);
   sidebar.layoutSizingVertical = 'FILL';
+  await __deshYield();
 
   // Logo
   const logoRow = figma.createFrame();
@@ -146,6 +147,7 @@ function getDashboard01Code(): string {
     { label: 'Settings', active: false },
   ];
 
+  await __deshYield();
   for (const item of navItems) {
     const navBtn = figma.createFrame();
     navBtn.name = 'Nav / ' + item.label;
@@ -178,6 +180,7 @@ function getDashboard01Code(): string {
     navLabel.fills = [{ type: 'SOLID', color: item.active ? colors.text : colors.muted }];
     navBtn.appendChild(navLabel);
     navLabel.layoutSizingHorizontal = 'FILL';
+    await __deshYield(2);
   }
 
   // ---- main content ----
@@ -196,6 +199,7 @@ function getDashboard01Code(): string {
   root.appendChild(main);
   main.layoutSizingHorizontal = 'FILL';
   main.layoutSizingVertical = 'FILL';
+  await __deshYield();
 
   // Header row
   const header = figma.createFrame();
@@ -238,6 +242,7 @@ function getDashboard01Code(): string {
   dateText.fontSize = 13;
   dateText.fills = [{ type: 'SOLID', color: colors.muted }];
   dateBadge.appendChild(dateText);
+  await __deshYield();
 
   // Stats row
   const statsRow = figma.createFrame();
@@ -300,6 +305,7 @@ function getDashboard01Code(): string {
     cardChange.fills = [{ type: 'SOLID', color: stat.up ? colors.green : colors.muted }];
     card.appendChild(cardChange);
     cardChange.layoutSizingHorizontal = 'FILL';
+    await __deshYield(2);
   }
 
   // Bottom row: chart + table
@@ -363,6 +369,7 @@ function getDashboard01Code(): string {
   chartArea.paddingRight = 20;
   chartArea.itemSpacing = 8;
   chartArea.counterAxisAlignItems = 'END';
+  await __deshYield();
 
   const barHeights = [60, 90, 75, 120, 100, 140, 110, 160, 130, 180, 150, 200];
   const barHeights2 = [40, 60, 50, 80, 70, 100, 85, 120, 95, 140, 110, 160];
@@ -393,6 +400,7 @@ function getDashboard01Code(): string {
     bar2.resize(14, barHeights2[i]);
     bar2.cornerRadius = 2;
     barGroup.appendChild(bar2);
+    await __deshYield(3);
   }
 
   // Table card
@@ -413,6 +421,7 @@ function getDashboard01Code(): string {
   tableCard.strokeWeight = 1;
   bottomRow.appendChild(tableCard);
   tableCard.layoutSizingVertical = 'FILL';
+  await __deshYield();
 
   const tableTitle = figma.createText();
   tableTitle.characters = 'Recent Transactions';
@@ -486,6 +495,7 @@ function getDashboard01Code(): string {
     amountText.fills = [{ type: 'SOLID', color: row.amount.startsWith('+') ? colors.green : colors.red }];
     amountText.textAlignHorizontal = 'RIGHT';
     tr.appendChild(amountText);
+    await __deshYield(2);
   }
 
   figma.currentPage.selection = [root];
@@ -635,6 +645,7 @@ export function registerBlockCommands(program: Command): void {
 
     createdIds.push(inst.id);
     offsetX += inst.width + gap;
+    await __deshYield(3);
   }
 
   const allNodes = createdIds.map(id => figma.getNodeById(id)).filter(Boolean);
@@ -740,6 +751,7 @@ export function registerBlockCommands(program: Command): void {
 
     createdIds.push(clone.id);
     offsetX += newW + gap;
+    await __deshYield();
   }
 
   const allNodes = createdIds.map(id => figma.getNodeById(id)).filter(Boolean);
