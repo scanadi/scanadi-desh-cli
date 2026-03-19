@@ -65,6 +65,29 @@ desh components sync               # Read project .tsx → push to Figma
 desh components list               # Show discovered components + variants + source
 ```
 
+### Component Linking (code ↔ Figma)
+
+```bash
+desh components link               # Auto-match code↔Figma by name (3-pass matching)
+desh components link "Button"      # Link single component
+desh components link "Button" "key"  # Manual link to specific Figma component key
+desh components link --dry-run     # Preview matches without writing
+desh components linked             # Show linked components + variant counts
+desh components linked --json      # JSON output
+desh components unlink "Button"    # Remove a link
+desh components diff               # Diff all linked component variants
+desh components diff "Button"      # Diff single component
+desh components diff --json        # JSON output
+desh components push               # Push missing code variants → Figma
+desh components push "Button"      # Push single component
+desh components push --dry-run     # Preview without modifying Figma
+desh components pull               # Pull missing Figma variants → code
+desh components pull "Button"      # Pull single component
+desh components pull --dry-run     # Preview without modifying files
+```
+
+Requires `FIGMA_API_TOKEN` and `library` in `desh.config.json`. Mappings stored in `.desh-component-map.json`.
+
 ## Create Elements
 
 ### Quick Primitives

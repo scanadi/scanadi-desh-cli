@@ -1,7 +1,7 @@
 ---
 name: desh
 description: |
-  Use this skill whenever the user wants to work with Figma — creating designs, syncing tokens, rendering components, managing variables, exporting assets, or controlling Figma Desktop in any way. desh (Design Shell) is a CLI that controls Figma Desktop directly via Chrome DevTools Protocol, requiring no API key. Use this skill when: user mentions Figma, design systems, creating UI components, syncing design tokens, managing Figma variables, exporting from Figma, accessibility audits on designs, rendering JSX to Figma, or any design-to-code / code-to-design workflow. Even if the user doesn't say "desh" explicitly — if they want anything done in Figma, this is the skill to use.
+  Use this skill whenever the user wants to work with Figma — creating designs, syncing tokens, rendering components, managing variables, exporting assets, linking code↔Figma components, or controlling Figma Desktop in any way. desh (Design Shell) is a CLI that controls Figma Desktop directly via Chrome DevTools Protocol, requiring no API key. Use this skill when: user mentions Figma, design systems, creating UI components, syncing design tokens, managing Figma variables, exporting from Figma, accessibility audits on designs, rendering JSX to Figma, component linking/diffing/syncing between code and Figma, or any design-to-code / code-to-design workflow. Even if the user doesn't say "desh" explicitly — if they want anything done in Figma, this is the skill to use.
 ---
 
 # desh — Design Shell
@@ -36,6 +36,7 @@ desh lib components --all-pages
 
 # What's in the codebase?
 desh components list               # scans code, shows what can be pushed
+desh components linked             # show linked code↔Figma mappings
 cat desh.config.json               # if it exists
 ```
 
@@ -43,6 +44,7 @@ After this step you should know:
 - What Figma library components are available
 - What local variables/collections exist
 - What code components exist but aren't in Figma yet
+- Which code components are already linked to Figma library components
 
 ### Step 2: Decide how to create (always)
 
@@ -100,11 +102,14 @@ Always verify after creating or modifying visual elements.
 ```bash
 desh connect                         # Patch Figma, verify CDP
 desh init                            # Scan project, generate desh.config.json
+                                     # Auto-discovers linked library from Figma
 desh sync                            # Push tokens + components to Figma
 ```
 
 If permission error on macOS: System Settings -> Privacy & Security -> Full Disk Access -> add Terminal -> restart.
 If Figma was updated: quit Figma, run `desh connect` again.
+
+`desh init` auto-discovers the linked Figma library by finding remote component instances in the current file and resolving their source via the REST API. This populates the `library` field automatically.
 
 `desh.config.json`:
 ```json
@@ -112,11 +117,14 @@ If Figma was updated: quit Figma, run `desh connect` again.
   "tokens": ["packages/ui/globals.css"],
   "primitives": "packages/ui/src/components",
   "components": ["apps/web/src/components"],
-  "libraryFileKey": "YOUR_FIGMA_LIBRARY_FILE_KEY"
+  "library": {
+    "fileKey": "abc123xyz",
+    "name": "Design System Library"
+  }
 }
 ```
 
-Store the library file key here so you don't repeat it. Set `FIGMA_API_TOKEN` in `.env.local` for REST API features (search, import-all).
+Set `FIGMA_API_TOKEN` in `.env.local` for REST API features (search, import-all, component linking).
 
 ---
 
@@ -132,7 +140,10 @@ desh bind fill "primary"             # Bind node fill to variable
 desh bind stroke "border"
 desh lib vars "Theme"                # List library variables by collection
 desh lib import-vars "collection"    # Import library variables locally
+desh export css                      # Export variables as CSS (OKLCH format)
 ```
+
+Token sync stores original OKLCH values in Figma variable descriptions (`desh:oklch(...)|oklch(...)`) for lossless roundtrip. `export css` reads these stored values to emit original OKLCH instead of lossy RGB→OKLCH conversion.
 
 Always use `var:` binding in render JSX (`bg="var:card"`, `color="var:foreground"`) when variables exist. Never hardcode hex values if a variable is available.
 
@@ -157,6 +168,65 @@ desh lib apply-style "style"         # Apply style
 
 ---
 
+## Component Linking (code ↔ Figma)
+
+Bidirectional sync between code components (`.tsx` with `cva()` variants) and Figma library component sets. Requires `FIGMA_API_TOKEN` and a linked library in `desh.config.json`.
+
+### Link code components to Figma
+```bash
+desh components link                 # Auto-match all by name (3-pass: exact → normalized → PascalCase)
+desh components link "Button"        # Link single component
+desh components link "Button" "key"  # Manual link to specific Figma component key
+desh components link --dry-run       # Preview matches without writing
+```
+
+Saves mappings to `.desh-component-map.json`.
+
+### Inspect & manage links
+```bash
+desh components linked               # Show all linked components + variant counts
+desh components linked --json        # JSON output
+desh components unlink "Button"      # Remove a link
+```
+
+### Diff variants between code and Figma
+```bash
+desh components diff                 # Diff all linked components
+desh components diff "Button"        # Diff single component
+desh components diff --json          # JSON output
+```
+
+Shows per-axis breakdown: matched variants, code-only, Figma-only.
+
+### Push code variants → Figma
+```bash
+desh components push                 # Push missing code variants to Figma library
+desh components push "Button"        # Push single component
+desh components push --dry-run       # Preview without modifying Figma
+```
+
+Clones an existing variant in the component set and sets new axis/value properties.
+
+### Pull Figma variants → code
+```bash
+desh components pull                 # Pull missing Figma variants to code
+desh components pull "Button"        # Pull single component
+desh components pull --dry-run       # Preview without modifying files
+```
+
+Injects new variant values into `cva()` calls with empty class strings (requires manual styling).
+
+### Typical linking workflow
+```bash
+desh init                            # Auto-discovers library
+desh components link                 # Match code↔Figma by name
+desh components diff                 # See what's different
+desh components push                 # Send missing code variants to Figma
+desh components pull                 # Get missing Figma variants into code
+```
+
+---
+
 ## Command Reference
 
 ### Discovery & Navigation
@@ -165,6 +235,7 @@ desh connect                         desh pages list
 desh pages switch "name"             desh canvas info
 desh find "Button"                   desh node tree ["id"] [-d depth]
 desh files                           desh components list
+desh components linked               desh components diff [name]
 ```
 
 ### Create & Modify
@@ -198,6 +269,14 @@ desh a11y audit|contrast|vision|touch|text
 desh analyze colors|typography|spacing|clusters
 ```
 
+### Component Linking
+```bash
+desh components link [name] [key]    desh components linked [--json]
+desh components unlink "name"        desh components diff [name] [--json]
+desh components push [name] [--dry-run]
+desh components pull [name] [--dry-run]
+```
+
 ### Other
 ```bash
 desh blocks list                     desh blocks create dashboard-01
@@ -226,7 +305,9 @@ desh remove-bg                       desh sync [--force]
 13. **Scripts stay small.** Keep `desh run` scripts under 200 lines. Break into phases.
 14. **Don't freeze Figma.** Never `findAll` on root, never walk INSTANCE children.
 15. **Shadows fail gracefully.** If shadow prop errors, use stroke + bg instead.
-16. **Never use text characters as icons.** Never use "✓", "✕", "▾", "▴", or any Unicode character as a substitute for an icon. Always use library icon instances (`desh lib search "check" --file KEY --include-icons`) or `<Icon name="lucide:...">` in JSX render. Figma design system libraries typically contain the full Lucide icon set — search with `--include-icons` flag since icons are hidden by default. In `desh run` scripts, use `figma.importComponentByKeyAsync(key)` then `.createInstance()` to place library icons programmatically.
+16. **Link before diffing.** Run `desh components link` before `diff`/`push`/`pull`. These commands require `.desh-component-map.json` to exist.
+17. **Diff before push/pull.** Always run `desh components diff` first to understand what's different before pushing or pulling variants.
+18. **Never use text characters as icons.** Never use "✓", "✕", "▾", "▴", or any Unicode character as a substitute for an icon. Always use library icon instances (`desh lib search "check" --file KEY --include-icons`) or `<Icon name="lucide:...">` in JSX render. Figma design system libraries typically contain the full Lucide icon set — search with `--include-icons` flag since icons are hidden by default. In `desh run` scripts, use `figma.importComponentByKeyAsync(key)` then `.createInstance()` to place library icons programmatically.
 
 ---
 
