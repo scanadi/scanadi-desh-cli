@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseConfig } from '../src/config.js';
+import { parseConfig, getLibraryFileKey } from '../src/config.js';
 
 describe('parseConfig', () => {
   it('parses single-app config', () => {
@@ -32,5 +32,16 @@ describe('parseConfig', () => {
     expect(config.tokens).toEqual([]);
     expect(config.components).toEqual([]);
     expect(config.primitives).toBeUndefined();
+  });
+
+  it('prefers nested library file key when present', () => {
+    expect(getLibraryFileKey({
+      libraryFileKey: 'legacy-key',
+      library: { fileKey: 'nested-key', name: 'Design System' },
+    })).toBe('nested-key');
+  });
+
+  it('falls back to legacy libraryFileKey', () => {
+    expect(getLibraryFileKey({ libraryFileKey: 'legacy-key' })).toBe('legacy-key');
   });
 });

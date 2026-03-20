@@ -18,6 +18,12 @@ interface RawConfig {
   library?: { fileKey: string; name: string };
 }
 
+type LibraryConfigLike =
+  | Pick<DeshConfig, 'libraryFileKey' | 'library'>
+  | Pick<RawConfig, 'libraryFileKey' | 'library'>
+  | null
+  | undefined;
+
 export function parseConfig(raw: RawConfig, configDir = '.'): DeshConfig {
   const tokens = raw.tokens
     ? Array.isArray(raw.tokens) ? raw.tokens : [raw.tokens]
@@ -26,6 +32,10 @@ export function parseConfig(raw: RawConfig, configDir = '.'): DeshConfig {
     ? Array.isArray(raw.components) ? raw.components : [raw.components]
     : [];
   return { tokens, primitives: raw.primitives, components, libraryFileKey: raw.libraryFileKey, library: raw.library, configDir };
+}
+
+export function getLibraryFileKey(config: LibraryConfigLike): string | undefined {
+  return config?.library?.fileKey || config?.libraryFileKey;
 }
 
 export function loadConfig(startDir = process.cwd()): DeshConfig | null {

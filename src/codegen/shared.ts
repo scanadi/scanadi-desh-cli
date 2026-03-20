@@ -85,19 +85,19 @@ export function generateVarLookupCode(varName: string): string {
 }
 
 /**
- * Generate JS that loads all shadcn variables into `vars` and
+ * Generate JS that loads all local variables into `vars` and
  * defines `boundFill`. Must be used inside an async IIFE.
  */
 export function generateVarLoadingCode(): string {
   return `
-const collections = await figma.variables.getLocalVariableCollectionsAsync();
+const allVars = await figma.variables.getLocalVariablesAsync();
 const vars = {};
-for (const col of collections) {
-  if (col.name.startsWith('shadcn')) {
-    for (const id of col.variableIds) {
-      const v = await figma.variables.getVariableByIdAsync(id);
-      if (v) vars[v.name] = v;
-    }
+for (const v of allVars) {
+  vars[v.name] = v;
+  const slash = v.name.lastIndexOf('/');
+  if (slash >= 0) {
+    const short = v.name.slice(slash + 1);
+    if (!vars[short]) vars[short] = v;
   }
 }
 const boundFill = (variable) => figma.variables.setBoundVariableForPaint(

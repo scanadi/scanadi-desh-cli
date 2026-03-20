@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
-import { join, relative } from 'path';
-import { loadConfig, requireConfig } from '../config.js';
+import { join, relative, basename, extname } from 'path';
+import { requireConfig, type DeshConfig } from '../config.js';
 import { loadComponentMap, saveComponentMap, type ComponentMap } from '../linker/component-map.js';
 import { findBestMatch } from '../linker/match.js';
 import { scanComponentFile } from '../scanner/components.js';
@@ -27,6 +27,52 @@ function collectTsxFiles(dir: string): string[] {
   return files;
 }
 
+export interface CodeComponentCandidate {
+  name: string;
+  file: string;
+  variants: Record<string, string[]>;
+  subComponents: string[];
+}
+
+function fileNameToPascalCase(filePath: string): string {
+  const fileName = basename(filePath, extname(filePath));
+  return fileName.charAt(0).toUpperCase() +
+    fileName.slice(1).replace(/-([a-z])/g, (_: string, c: string) => c.toUpperCase());
+}
+
+export function collectCodeComponentsForLinking(
+  config: Pick<DeshConfig, 'configDir' | 'primitives' | 'components'>,
+): CodeComponentCandidate[] {
+  const codeComponents: CodeComponentCandidate[] = [];
+  const dirs: Array<{ dir: string; source: 'primitives' | 'components' }> = [];
+
+  if (config.primitives) {
+    dirs.push({ dir: join(config.configDir, config.primitives), source: 'primitives' });
+  }
+  for (const componentDir of config.components) {
+    dirs.push({ dir: join(config.configDir, componentDir), source: 'components' });
+  }
+
+  for (const { dir, source } of dirs) {
+    for (const file of collectTsxFiles(dir)) {
+      const def = scanComponentFile(file, source);
+      if (!def || def.exports.length === 0) continue;
+
+      const primaryExport = def.exports.find((exp) => exp === fileNameToPascalCase(file)) ?? def.exports[0];
+      for (const exportedName of def.exports) {
+        codeComponents.push({
+          name: exportedName,
+          file,
+          variants: exportedName === primaryExport ? def.variants : {},
+          subComponents: exportedName === primaryExport ? def.subComponents : [],
+        });
+      }
+    }
+  }
+
+  return codeComponents;
+}
+
 export function registerComponentLinkCommands(parent: Command): void {
   // --- components link ---
   parent
@@ -44,22 +90,7 @@ export function registerComponentLinkCommands(parent: Command): void {
 
         // 1. Scan code components
         status('Scanning code components...');
-        const primDir = config.primitives ? join(config.configDir, config.primitives) : null;
-        const codeComponents: Array<{ name: string; file: string; variants: Record<string, string[]>; subComponents: string[] }> = [];
-
-        if (primDir) {
-          for (const file of collectTsxFiles(primDir)) {
-            const def = scanComponentFile(file, 'primitives');
-            if (def && def.exports.length > 0) {
-              codeComponents.push({
-                name: def.exports[0],
-                file: file,
-                variants: def.variants,
-                subComponents: def.subComponents,
-              });
-            }
-          }
-        }
+        const codeComponents = collectCodeComponentsForLinking(config);
         progressDone();
 
         // 2. Fetch Figma library components

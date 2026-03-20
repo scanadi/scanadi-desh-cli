@@ -5,7 +5,18 @@ import { runFigmaCode } from '../utils/figma-eval.js';
 import { success, error, info, status, progressDone, warn } from '../utils/output.js';
 import { getFileComponents, getFileComponentSets, getFileInfo } from '../api/figma-rest.js';
 import { loadRegistry, saveRegistry } from '../registry.js';
-import { loadConfig } from '../config.js';
+import { loadConfig, getLibraryFileKey } from '../config.js';
+
+export interface ImportedLibraryComponent {
+  name: string;
+  id: string;
+}
+
+export function buildRegistryEntriesFromImportedComponents(imported: ImportedLibraryComponent[]) {
+  return Object.fromEntries(
+    imported.map((entry) => [entry.name, { nodeId: entry.id, type: 'COMPONENT' as const }]),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Register
@@ -395,7 +406,7 @@ export function registerLibCommands(program: Command): void {
 
         // 4. REST API fallback: search library by name if libraryFileKey is available
         const config = loadConfig();
-        const libKey = config?.libraryFileKey;
+        const libKey = getLibraryFileKey(config);
         if (libKey) {
           try {
             status('Searching library via REST API...');
@@ -688,6 +699,7 @@ export function registerLibCommands(program: Command): void {
         const BATCH_SIZE = 10;
         let imported = 0;
         let failed = 0;
+        const importedComponents: ImportedLibraryComponent[] = [];
 
         for (let i = 0; i < components.length; i += BATCH_SIZE) {
           const batch = components.slice(i, i + BATCH_SIZE);
@@ -716,29 +728,30 @@ export function registerLibCommands(program: Command): void {
 
           const results = JSON.parse(raw) as Array<{ key: string; name?: string; id?: string; ok: boolean; error?: string }>;
           for (const r of results) {
-            if (r.ok) imported++;
-            else failed++;
+            if (r.ok && r.name && r.id) {
+              imported++;
+              importedComponents.push({ name: r.name, id: r.id });
+            } else {
+              failed++;
+            }
           }
         }
         progressDone();
 
-        // 3. Save keys to registry
-        const registry = loadRegistry(process.cwd());
+        // 3. Save imported component node IDs to the registry
+        const config = loadConfig();
+        const projectDir = config?.configDir ?? process.cwd();
+        const registry = loadRegistry(projectDir);
         registry.figmaFileKey = registry.figmaFileKey || fileKey;
-        for (const c of components) {
-          registry.components[c.name] = {
-            nodeId: c.key,
-            type: c.componentSetName ? 'COMPONENT' : 'COMPONENT',
-          };
-        }
+        Object.assign(registry.components, buildRegistryEntriesFromImportedComponents(importedComponents));
         registry.pushedAt = new Date().toISOString();
-        saveRegistry(process.cwd(), registry);
+        saveRegistry(projectDir, registry);
 
         success(`Imported ${imported} component(s) from "${fileInfo.name}"`);
         if (failed > 0) {
           info(`${failed} component(s) failed to import (may require library access).`);
         }
-        info('Keys saved to .desh-registry.json');
+        info('Imported component node IDs saved to .desh-registry.json');
       } catch (err) {
         progressDone();
         error(String((err as Error).message));
@@ -803,8 +816,9 @@ export function registerLibCommands(program: Command): void {
         let fileKey = opts.file;
         if (!fileKey) {
           const config = loadConfig();
-          if (config?.libraryFileKey) {
-            fileKey = config.libraryFileKey;
+          const configuredFileKey = getLibraryFileKey(config);
+          if (configuredFileKey) {
+            fileKey = configuredFileKey;
           } else {
             error('No file key provided. Use --file <key> or run `desh lib set-library <key>` to save a default.');
             process.exit(1);

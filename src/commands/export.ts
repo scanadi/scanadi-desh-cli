@@ -6,6 +6,13 @@ import { error, success } from '../utils/output.js';
 
 const toOklch = converter('oklch') as unknown as (color: { mode: string; r: number; g: number; b: number }) => { l: number; c: number; h?: number } | undefined;
 
+export interface ExportedVariable {
+  name: string;
+  type: string;
+  val: unknown;
+  desc: string;
+}
+
 function rgbToOklch(r: number, g: number, b: number): string {
   const c = toOklch({ mode: 'rgb', r, g, b });
   if (!c) return `oklch(0 0 0)`;
@@ -13,6 +20,36 @@ function rgbToOklch(r: number, g: number, b: number): string {
   const C = +c.c.toFixed(4);
   const H = +(c.h ?? 0).toFixed(2);
   return `oklch(${L} ${C} ${H})`;
+}
+
+export function formatCssVariableExport(vars: ExportedVariable[]): string {
+  const rootLines: string[] = [];
+  const darkLines: string[] = [];
+
+  for (const v of vars) {
+    if (v.type === 'COLOR') {
+      // Use original CSS values from description if available (avoids OKLCH drift on export).
+      if (v.desc.startsWith('desh:')) {
+        const [lightCss, darkCss] = v.desc.slice(5).split('|');
+        if (lightCss) rootLines.push(`  --${v.name}: ${lightCss};`);
+        if (darkCss) darkLines.push(`  --${v.name}: ${darkCss};`);
+        continue;
+      }
+
+      const c = v.val as { r: number; g: number; b: number };
+      rootLines.push(`  --${v.name}: ${rgbToOklch(c.r, c.g, c.b)};`);
+      continue;
+    }
+
+    const suffix = v.type === 'FLOAT' ? 'px' : '';
+    rootLines.push(`  --${v.name}: ${v.val}${suffix};`);
+  }
+
+  let output = `:root {\n${rootLines.join('\n')}\n}`;
+  if (darkLines.length > 0) {
+    output += `\n\n.dark {\n${darkLines.join('\n')}\n}`;
+  }
+  return output;
 }
 
 export function registerExportCommands(program: Command): void {
@@ -34,27 +71,13 @@ return vars.map(v => {
 })()`;
 
       try {
-        const vars = await runFigmaCode<Array<{ name: string; type: string; val: unknown; desc: string }>>(code, 60_000);
+        const vars = await runFigmaCode<ExportedVariable[]>(code, 60_000);
         if (!Array.isArray(vars)) {
           error('Unexpected response from Figma');
           process.exit(1);
         }
 
-        const lines = vars.map(v => {
-          if (v.type === 'COLOR') {
-            // Use original CSS value from description if available (avoids OKLCH→RGB→OKLCH drift)
-            if (v.desc.startsWith('desh:')) {
-              const lightCss = v.desc.slice(5).split('|')[0];
-              return `  --${v.name}: ${lightCss};`;
-            }
-            const c = v.val as { r: number; g: number; b: number };
-            return `  --${v.name}: ${rgbToOklch(c.r, c.g, c.b)};`;
-          }
-          const suffix = v.type === 'FLOAT' ? 'px' : '';
-          return `  --${v.name}: ${v.val}${suffix};`;
-        });
-
-        const output = `:root {\n${lines.join('\n')}\n}`;
+        const output = formatCssVariableExport(vars);
         if (opts.output) {
           writeFileSync(opts.output, output);
           success(`CSS variables written to ${opts.output}`);
