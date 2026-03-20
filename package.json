@@ -1,10 +1,10 @@
 {
   "name": "design-shell",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Design Shell — CLI that bridges your React/Tailwind codebase to Figma Desktop",
   "type": "module",
   "bin": {
-    "desh": "./dist/cli.js"
+    "desh": "dist/cli.js"
   },
   "files": [
     "dist",
@@ -35,7 +35,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/scanadi/scanadi-desh-cli.git"
+    "url": "git+https://github.com/scanadi/scanadi-desh-cli.git"
   },
   "homepage": "https://github.com/scanadi/scanadi-desh-cli",
   "bugs": {
